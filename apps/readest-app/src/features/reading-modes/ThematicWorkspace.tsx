@@ -1075,7 +1075,11 @@ export default function ThematicWorkspace({
                       ) : (
                         <>
                           <div className='thematic-assistant-label'>
-                            <ModianMascot mood='research' size={54} motion='none' />
+                            <ModianMascot
+                              mood='research'
+                              size={54}
+                              motion={research.messages.at(-1)?.id === item.id ? 'idle' : 'none'}
+                            />
                             <strong>小墨</strong>
                             <span>跨书讨论</span>
                           </div>

@@ -736,6 +736,15 @@ className = 'transition-transform hover:scale-105';
 Existing exceptions: `.window-button` in globals.css uses `hover:scale-105`. That's
 legacy; new code shouldn't follow it.
 
+#### 墨书的品牌与小墨
+
+- 阅读工具栏使用小墨形象与“墨书”字样。模式、单双页和字句跟随控件从当前
+  `--paper` / `--ink` 混合出中性底色和选中态，随阅读背景变化，不使用固定米黄色。
+- `ModianMascot` 复用原有纸张、折角和飘带形象，以透明动画 WebP 呈现眨眼、
+  点头和放大镜查阅。保持动作轻微；主题对话只让最新回复的小墨活动。
+- `motion='none'`、系统减少动态效果及墨水屏模式使用原始静态图片；动画不应
+  引入逐帧 React 更新或运行时 Canvas 渲染。
+
 #### Reduced motion
 
 Reduced-motion preference is honored via the `no-transitions` class

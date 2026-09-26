@@ -7,7 +7,6 @@ import {
   PiCaretDown,
   PiChatCircleText,
   PiGear,
-  PiLeaf,
   PiBookmarkSimple,
   PiPushPin,
   PiDotsThree,
@@ -449,11 +448,15 @@ export default function ModeReader({
           onClick={onLibrary}
           aria-label='墨书 · 返回书库'
         >
-          <PiLeaf />
+          <ModianMascot mood='reading' size={38} motion='idle' />
           墨书
         </button>
         {!choosing && (
-          <button type='button' className='moshu-mode-pill' onClick={() => setSelector(true)}>
+          <button
+            type='button'
+            className='moshu-mode-pill eink-bordered'
+            onClick={() => setSelector(true)}
+          >
             {modeNames[state!.mode!]}
             <PiCaretDown />
             <span>切换模式</span>
@@ -477,7 +480,7 @@ export default function ModeReader({
                 <PiList />
                 目录
               </button>
-              <div className='moshu-spread-toggle' role='group' aria-label='页面布局'>
+              <div className='moshu-spread-toggle eink-bordered' role='group' aria-label='页面布局'>
                 <button
                   type='button'
                   disabled={layoutBusy}

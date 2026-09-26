@@ -24,9 +24,14 @@ vi.mock('@/store/libraryStore', () => {
 vi.mock('@/store/bookDataStore', () => ({
   useBookDataStore: { getState: () => ({ getBookData: () => null }) },
 }));
-vi.mock('@/store/settingsStore', () => ({
-  useSettingsStore: { getState: () => ({ settings: {} }) },
-}));
+vi.mock('@/store/settingsStore', () => {
+  const state = { settings: {} };
+  return {
+    useSettingsStore: Object.assign((select: (value: typeof state) => unknown) => select(state), {
+      getState: () => state,
+    }),
+  };
+});
 vi.mock('../active-reading/data', async (original) => ({
   ...(await original<typeof import('../active-reading/data')>()),
   loadReadingData: async () => ({ records: [] }),

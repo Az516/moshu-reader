@@ -3,6 +3,9 @@
   --ink: var(--color-base-content, #302d27);
   --muted: color-mix(in srgb, var(--ink) 62%, var(--paper));
   --line: color-mix(in srgb, var(--ink) 15%, var(--paper));
+  --control-bg: color-mix(in srgb, var(--ink) 4%, var(--paper));
+  --control-hover: color-mix(in srgb, var(--ink) 8%, var(--paper));
+  --control-selected: color-mix(in srgb, var(--ink) 13%, var(--paper));
   --gold: #b78038;
   width: 100%;
   height: 100%;
@@ -58,11 +61,11 @@
   font-size: 22px !important;
   align-items: center;
   letter-spacing: 3px;
+  flex-shrink: 0;
 }
-.moshu-brand svg {
-  color: #786f62;
-  width: 26px;
-  height: 26px;
+.moshu-brand .modian-mascot {
+  width: 38px;
+  height: 38px;
 }
 .moshu-mode-pill {
   display: flex;
@@ -72,16 +75,21 @@
   left: 50%;
   transform: translateX(-50%);
   font-size: 17px !important;
-  background: #f4e8d4;
-  border: 1px solid #e6d5bb;
+  background: var(--control-bg);
+  color: var(--ink);
+  border: 1px solid var(--line);
   border-radius: 30px;
   padding: 7px 18px;
+  transition: background-color 150ms ease;
+}
+.moshu-mode-pill:hover {
+  background: var(--control-hover);
 }
 .moshu-mode-pill span {
   font-size: 13px;
-  color: #86765e;
-  border-left: 1px solid #d9c6a8;
-  padding-left: 12px;
+  color: var(--muted);
+  border-inline-start: 1px solid var(--line);
+  padding-inline-start: 12px;
 }
 .moshu-top-actions {
   margin-left: auto;
@@ -98,27 +106,32 @@
   gap: 6px;
   padding: 7px 9px;
   border-radius: 8px;
-  color: #71695d;
+  color: var(--muted);
   font-size: 13px !important;
 }
 .moshu-toc-toggle:hover {
-  background: #eee5d7;
+  background: var(--control-hover);
 }
 .moshu-spread-toggle {
   padding: 3px;
-  border: 1px solid #ddd2c2;
+  border: 1px solid var(--line);
   border-radius: 9px;
-  background: #fff6;
+  background: var(--control-bg);
 }
 .moshu-spread-toggle button {
   padding: 5px 9px;
   border-radius: 6px;
-  color: #807669;
+  color: var(--muted);
   font-size: 12px !important;
+  transition: background-color 150ms ease;
+}
+.moshu-spread-toggle button:hover:not([aria-pressed='true']) {
+  background: var(--control-hover);
 }
 .moshu-spread-toggle button[aria-pressed='true'] {
-  background: #e8d2af;
-  color: #60441f;
+  background: var(--control-selected);
+  color: var(--ink);
+  font-weight: 600;
 }
 .moshu-icon-button {
   display: inline-flex;
@@ -130,23 +143,23 @@
   font-size: 22px !important;
 }
 .moshu-icon-button:hover {
-  background: #eee5d7;
+  background: var(--control-hover);
 }
 .moshu-follow-toggle {
-  color: #776e60;
+  color: var(--muted);
   font-size: 13px !important;
   display: flex;
   align-items: center;
   gap: 8px;
 }
 .moshu-follow-toggle span {
-  background: #eee8de;
+  background: var(--control-bg);
   padding: 3px 10px;
   border-radius: 20px;
 }
 .moshu-follow-toggle[aria-pressed='true'] span {
-  background: #edd1a8;
-  color: #714716;
+  background: var(--control-selected);
+  color: var(--ink);
 }
 /* A compact entry, sized to the available window rather than a landing page. */
 .moshu-selector {
@@ -1259,7 +1272,7 @@
   background: transparent;
 }
 .moshu-topbar .moshu-icon-button[aria-pressed='true'] {
-  background: color-mix(in srgb, var(--gold) 20%, var(--paper));
+  background: var(--control-selected);
 }
 .moshu-toc-toggle {
   display: inline-flex;
@@ -1282,13 +1295,7 @@
 }
 [data-theme$='dark']
   .moshu-root
-  :is(
-    .moshu-spread-toggle,
-    .moshu-mode-pill,
-    .moshu-mark-style button,
-    .moshu-sheet textarea,
-    .moshu-page-footer input
-  ) {
+  :is(.moshu-mark-style button, .moshu-sheet textarea, .moshu-page-footer input) {
   background: var(--paper);
   color: var(--ink);
   border-color: var(--line);
@@ -1298,9 +1305,21 @@
   :is(.moshu-toc-toggle, .moshu-follow-toggle, .moshu-mode-pill span, blockquote) {
   color: var(--muted);
 }
-[data-theme$='dark'] .moshu-root .moshu-spread-toggle button[aria-pressed='true'] {
-  background: color-mix(in srgb, var(--gold) 30%, var(--paper));
-  color: var(--ink);
+[data-eink='true'] .moshu-root :is(.moshu-mode-pill, .moshu-spread-toggle) {
+  background: var(--paper);
+  border-color: var(--ink);
+}
+[data-eink='true']
+  .moshu-root
+  :is(
+    .moshu-spread-toggle button[aria-pressed='true'],
+    .moshu-follow-toggle[aria-pressed='true'] span
+  ) {
+  background: var(--ink);
+  color: var(--paper);
+}
+.moshu-topbar :is(button, .moshu-spread-toggle):focus-visible {
+  outline-color: color-mix(in srgb, var(--ink) 55%, var(--paper));
 }
 [data-eink='true'] .moshu-dwell-nudge {
   border-color: currentColor;
