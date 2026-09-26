@@ -1,0 +1,59 @@
+{
+  "recordedAt": "2026-09-24T12:02:34.966Z",
+  "environment": {
+    "node": "v24.19.0",
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M5",
+    "engine": "Vitest jsdom; actual EPUB parser; in-memory AppService"
+  },
+  "fixture": {
+    "paragraphsPerBook": 100,
+    "charactersPerParagraph": 215,
+    "compressedBytesPerBook": 1843,
+    "chapterBytesPerBook": 65617,
+    "allBooksMatch": true
+  },
+  "limits": "Synthetic highly compressible books; warm lane reuses immutable File snapshots. Excludes native disk/WebKit/model/network. Native mutable files still receive complete byte hashing; this is a baseline, not a user-device SLO.",
+  "results": [
+    {
+      "books": 10,
+      "passages": 1000,
+      "coldIndexMs": 294.89924999999994,
+      "warmIndexMs": 12.850207999999952,
+      "searchMs": [
+        6.277582999999936, 5.9122919999999795, 4.07508299999995, 4.0977080000000115,
+        4.130290999999943
+      ],
+      "abortToSettledMs": 0.3298340000000053,
+      "maxEventLoopGapMs": 17.186541000000034,
+      "peakRssBytes": 293617664
+    },
+    {
+      "books": 100,
+      "passages": 10000,
+      "coldIndexMs": 2118.58025,
+      "warmIndexMs": 133.97162500000013,
+      "searchMs": [
+        50.57383299999992, 43.71149999999989, 39.56283300000041, 36.38329199999998,
+        35.20762500000001
+      ],
+      "abortToSettledMs": 0.1551249999997708,
+      "maxEventLoopGapMs": 16.12395800000013,
+      "peakRssBytes": 453001216
+    },
+    {
+      "books": 1000,
+      "passages": 100000,
+      "coldIndexMs": 23535.806,
+      "warmIndexMs": 1635.4452920000003,
+      "searchMs": [
+        486.39037499999904, 410.4752499999995, 413.5044170000001, 414.005250000002,
+        423.36012499999924
+      ],
+      "abortToSettledMs": 0.22012499999982538,
+      "maxEventLoopGapMs": 26.572040999999444,
+      "peakRssBytes": 2437398528
+    }
+  ]
+}

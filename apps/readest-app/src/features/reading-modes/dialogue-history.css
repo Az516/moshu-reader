@@ -1,0 +1,77 @@
+.modian-dialogue .modian-history-toggle {
+  padding: 0.4rem 0.6rem;
+  border-radius: 0.4rem;
+  font-size: 0.8rem;
+}
+.modian-dialogue .modian-local-history {
+  max-height: 15rem;
+  overflow: auto;
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+}
+.modian-local-history > header,
+.modian-dialogue-recovery,
+.modian-local-save-error {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.modian-local-history > header {
+  justify-content: space-between;
+  font-size: 0.8rem;
+  margin-bottom: 0.6rem;
+}
+.modian-local-history > button {
+  display: flex;
+  flex-direction: column;
+  text-align: start;
+  width: 100%;
+  padding: 0.6rem;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+  gap: 0.2rem;
+}
+.modian-local-history > button > strong {
+  overflow-wrap: anywhere;
+  font-size: 0.85rem;
+}
+.modian-local-history > button > span,
+.modian-local-history small {
+  font-size: 0.72rem;
+  opacity: 0.75;
+}
+.modian-dialogue .modian-answer-state {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.72rem;
+  opacity: 0.75;
+}
+.modian-dialogue .modian-dialogue-recovery {
+  padding: 0.5rem 1rem;
+}
+.modian-dialogue-recovery > button,
+.modian-local-save-error > button,
+.modian-local-history > header > button {
+  border: 1px solid currentColor;
+  border-radius: 0.35rem;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.78rem;
+}
+.modian-dialogue .modian-local-save-state {
+  display: block;
+  padding: 0.35rem 1rem;
+  font-size: 0.7rem;
+  opacity: 0.7;
+}
+.modian-dialogue .modian-local-save-error {
+  padding: 0.6rem 1rem;
+  font-size: 0.8rem;
+}
+.modian-dialogue button:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+[data-eink='true'] .modian-dialogue .modian-answer-state,
+[data-eink='true'] .modian-dialogue .modian-local-save-state {
+  opacity: 1;
+}

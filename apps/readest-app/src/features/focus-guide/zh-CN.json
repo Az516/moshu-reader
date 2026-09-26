@@ -1,0 +1,9 @@
+{
+  "Visual follow": "视觉跟随",
+  "Visual follow settings": "视觉跟随设置",
+  "Move the pointer over a line to keep your place. Selecting text pauses the guide.": "鼠标移到哪行，就突出哪行；选文时自动暂停。",
+  "Enable visual follow": "开启视觉跟随",
+  "Background softening": "外围弱化强度",
+  "Clear lines on each side": "上下各保留清晰行数",
+  "Available for horizontal, single-column EPUB. Other layouts keep normal reading.": "适用于横排单栏 EPUB；其他排版保持普通阅读。"
+}

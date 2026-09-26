@@ -1,0 +1,371 @@
+/**
+ * Visual regression test for the AnnotationPopup component.
+ *
+ * Renders the *real* AnnotationPopup + HighlightOptions with actual
+ * annotationToolButtons, DEFAULT_HIGHLIGHT_COLORS, and optional user
+ * colors.  Tailwind CSS is loaded so the screenshot matches the live app.
+ *
+ * Guards against the layout regression from PR #3741 (missing
+ * `justify-between`, unwanted `flex-1` on the color strip).
+ */
+
+import React from 'react';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
+import { render, cleanup, fireEvent } from '@testing-library/react';
+import { page } from 'vitest/browser';
+import type { UserHighlightColor } from '@/types/book';
+
+// ── Tailwind / DaisyUI styles ───────────────────────────────────────────
+import '@/styles/globals.css';
+
+// ── Per-test state read by mocks ────────────────────────────────────────
+let mockUserColors: UserHighlightColor[] = [];
+
+// ── Mocks (must be before component imports) ────────────────────────────
+
+vi.mock('@/context/EnvContext', () => ({
+  useEnv: () => ({ envConfig: {}, appService: null }),
+}));
+
+vi.mock('@/store/themeStore', () => ({
+  useThemeStore: () => ({ isDarkMode: false }),
+}));
+
+vi.mock('@/hooks/useTranslation', () => ({
+  useTranslation: () => (s: string) => s,
+}));
+
+vi.mock('@/store/settingsStore', () => ({
+  useSettingsStore: () => ({
+    settings: {
+      globalReadSettings: {
+        highlightStyle: 'highlight' as const,
+        highlightStyles: {
+          highlight: 'yellow',
+          underline: 'red',
+          squiggly: 'blue',
+        },
+        customHighlightColors: {} as Record<string, string>,
+        get userHighlightColors() {
+          return mockUserColors;
+        },
+        defaultHighlightLabels: {},
+      },
+      globalViewSettings: {
+        isEink: false,
+        isColorEink: false,
+      },
+    },
+  }),
+}));
+
+vi.mock('@/hooks/useResponsiveSize', () => ({
+  useResponsiveSize: (n: number) => n,
+  useDefaultIconSize: () => 20,
+}));
+
+vi.mock('@/hooks/useKeyDownActions', () => ({
+  useKeyDownActions: () => {},
+}));
+
+vi.mock('@/helpers/settings', () => ({
+  saveSysSettings: vi.fn(),
+}));
+
+vi.mock('@/app/reader/utils/annotatorUtil', () => ({
+  getHighlightColorLabel: () => undefined,
+  // AnnotationPopup -> AnnotationNotes -> AnnotationNoteItem ->
+  // useSaveBooknoteNoteText imports these; a browser-mode mock is a strict
+  // ESM module, so every named import along the chain must exist.
+  decideNoteBubbleTransition: () => 'none',
+  applyNoteBubbleTransition: () => {},
+}));
+
+// ── Real component imports ──────────────────────────────────────────────
+
+import AnnotationPopup from '@/app/reader/components/annotator/AnnotationPopup';
+import { annotationToolButtons } from '@/app/reader/components/annotator/AnnotationTools';
+import { DEFAULT_ANNOTATION_TOOLBAR_ITEMS } from '@/utils/annotationToolbar';
+
+// ── Constants ───────────────────────────────────────────────────────────
+
+const POPUP_W = 300;
+const POPUP_H = 44;
+
+// Highlight options float above the popup by (28 + 16) = 44px
+const OPTIONS_OFFSET = 28 + 16;
+
+// Position the popup so both it and the floating options are visible:
+//   y=0..OPTIONS_OFFSET: highlight-options row
+//   y=OPTIONS_OFFSET..OPTIONS_OFFSET+POPUP_H: toolbar
+const POPUP_Y = OPTIONS_OFFSET;
+const POPUP_X = 0;
+const WRAPPER_H = POPUP_Y + POPUP_H + 14; // +14 for triangle below
+
+// Render the default-enabled tools (Share is hidden by default; users add it
+// via Customize Toolbar), matching what the popup shows out of the box.
+const toolButtons = annotationToolButtons
+  .filter((button) => DEFAULT_ANNOTATION_TOOLBAR_ITEMS.includes(button.type))
+  .map(({ label, Icon }) => ({
+    tooltipText: label,
+    Icon,
+    onClick: vi.fn(),
+  }));
+
+// Browser-mode matcher types are unavailable to tsgo; cast once here.
+const expectElement = (locator: unknown) =>
+  // @ts-expect-error -- expect.element() exists in vitest browser mode
+  expect.element(locator) as { toMatchScreenshot: (name: string) => Promise<void> };
+
+/**
+ * Fixed-size wrapper that contains both the popup and the absolutely
+ * positioned highlight-options row above it, matching the real app
+ * where the triangle points up and highlight options float above.
+ */
+const Wrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  // One of the app's own themes, not daisyUI's stock `dark`: the stock palette
+  // is daisyUI's to change between releases (it did in v5), while the app's
+  // themes are pinned in themes.ts.
+  <div
+    data-theme='default-dark'
+    style={{
+      position: 'relative',
+      width: POPUP_W,
+      height: WRAPPER_H,
+      overflow: 'visible',
+    }}
+  >
+    {children}
+  </div>
+);
+
+const renderPopup = (userColors: UserHighlightColor[] = []) => {
+  mockUserColors = userColors;
+  return render(
+    <Wrapper>
+      <AnnotationPopup
+        bookKey='test'
+        dir='ltr'
+        isVertical={false}
+        buttons={toolButtons}
+        notes={[]}
+        position={{ dir: 'up', point: { x: POPUP_X, y: POPUP_Y } }}
+        trianglePosition={{ dir: 'up', point: { x: POPUP_X + POPUP_W / 2, y: POPUP_Y + POPUP_H } }}
+        highlightOptionsVisible
+        selectedStyle='highlight'
+        selectedColor='yellow'
+        popupWidth={POPUP_W}
+        popupHeight={POPUP_H}
+        onHighlight={vi.fn()}
+        onDismiss={vi.fn()}
+      />
+    </Wrapper>,
+  );
+};
+
+const crowdedButtons = [
+  ...toolButtons.map((button, index) => ({
+    ...button,
+    label: index === 0 ? '呼叫小墨' : index === 1 ? '笔记' : index === 2 ? '标记' : undefined,
+  })),
+  ...annotationToolButtons.slice(6).map(({ label, Icon }) => ({
+    tooltipText: label,
+    Icon,
+    onClick: vi.fn(),
+  })),
+];
+
+const renderCrowdedPopup = (width = 300) =>
+  render(
+    <div style={{ position: 'relative', width, height: 120 }}>
+      <AnnotationPopup
+        bookKey='test'
+        dir='ltr'
+        isVertical={false}
+        buttons={crowdedButtons}
+        notes={[]}
+        position={{ dir: 'down', point: { x: 0, y: 10 } }}
+        trianglePosition={{ dir: 'down', point: { x: width / 2, y: 10 } }}
+        highlightOptionsVisible={false}
+        selectedStyle='highlight'
+        selectedColor='yellow'
+        popupWidth={width}
+        popupHeight={48}
+        onHighlight={vi.fn()}
+        onDismiss={vi.fn()}
+      />
+    </div>,
+  );
+
+// ── Lifecycle ───────────────────────────────────────────────────────────
+
+beforeAll(async () => {
+  await page.viewport(800, 600);
+});
+
+beforeEach(() => {
+  mockUserColors = [];
+});
+
+afterEach(() => {
+  cleanup();
+});
+
+// ── Tests ───────────────────────────────────────────────────────────────
+
+describe('AnnotationPopup layout screenshot', () => {
+  it('default 5 colors — compact color strip, large gap', async () => {
+    const { container } = renderPopup();
+    const wrapper = container.firstElementChild as HTMLElement;
+    await expectElement(page.elementLocator(wrapper)).toMatchScreenshot(
+      'annotation-popup-5-colors',
+    );
+  });
+
+  it('5+5 user colors — color strip grows, gap shrinks', async () => {
+    const { container } = renderPopup([
+      { hex: '#f97316' },
+      { hex: '#06b6d4' },
+      { hex: '#ec4899' },
+      { hex: '#14b8a6' },
+      { hex: '#f43f5e' },
+    ]);
+    const wrapper = container.firstElementChild as HTMLElement;
+    await expectElement(page.elementLocator(wrapper)).toMatchScreenshot(
+      'annotation-popup-10-colors',
+    );
+  });
+
+  it('5+10 user colors — color strip at max, overflow scrolls', async () => {
+    const { container } = renderPopup([
+      { hex: '#f97316' },
+      { hex: '#06b6d4' },
+      { hex: '#ec4899' },
+      { hex: '#14b8a6' },
+      { hex: '#f43f5e' },
+      { hex: '#a855f7' },
+      { hex: '#84cc16' },
+      { hex: '#0ea5e9' },
+      { hex: '#e11d48' },
+      { hex: '#6366f1' },
+    ]);
+    const wrapper = container.firstElementChild as HTMLElement;
+    await expectElement(page.elementLocator(wrapper)).toMatchScreenshot(
+      'annotation-popup-15-colors',
+    );
+  });
+});
+
+describe('AnnotationPopup responsive toolbar', () => {
+  it('keeps Chinese action labels on one line and moves excess tools into More', async () => {
+    const { container, getByRole } = renderCrowdedPopup(300);
+
+    const labels = Array.from(container.querySelectorAll<HTMLElement>('[data-tool-label]'));
+    expect(labels.length).toBeGreaterThan(0);
+    for (const label of labels) {
+      expect(getComputedStyle(label).whiteSpace).toBe('nowrap');
+      expect(label.getClientRects().length).toBe(1);
+    }
+
+    const toolbar = container.querySelector<HTMLElement>('.selection-buttons');
+    expect(toolbar).not.toBeNull();
+    expect(toolbar!.scrollWidth).toBeLessThanOrEqual(toolbar!.clientWidth);
+
+    const more = getByRole('button', { name: '更多工具' });
+    fireEvent.pointerDown(more, { button: 0, ctrlKey: false });
+    expect(getByRole('menu')).toBeTruthy();
+    expect(getByRole('menuitem', { name: /Proofread/ })).toBeTruthy();
+  });
+
+  it('uses coarse-pointer sized targets without making desktop controls oversized', () => {
+    const { container } = renderCrowdedPopup(420);
+    const button = container.querySelector<HTMLElement>('[data-selection-tool] button');
+    expect(button).not.toBeNull();
+    expect(button!.className).toContain('min-h-9');
+    expect(button!.className).toContain('pointer:coarse');
+  });
+});
+
+// ── Anchoring ───────────────────────────────────────────────────────────
+
+// The popup is handed coordinates in the coordinate space of the book cell
+// (`#gridcell-<bookKey>`, `position: relative`): Annotator subtracts that
+// cell's rect in getPosition/getPopupPosition. Its own wrapper therefore must
+// not become a viewport-anchored containing block, or the toolbar renders
+// `cell.left` px off the selection — which is what a `fixed inset-0` stacking
+// wrapper did (#6036), visible as soon as the sidebar pushes the cell off the
+// viewport origin.
+const CELL_LEFT = 240;
+const CELL_TOP = 32;
+const ANCHOR = { x: 120, y: 90 };
+
+const renderInCell = (extra?: React.ReactNode) =>
+  render(
+    <div
+      id='gridcell-test'
+      style={{
+        position: 'relative',
+        marginLeft: CELL_LEFT,
+        marginTop: CELL_TOP,
+        width: 500,
+        height: 400,
+      }}
+    >
+      <AnnotationPopup
+        bookKey='test'
+        dir='ltr'
+        isVertical={false}
+        buttons={toolButtons}
+        notes={[]}
+        position={{ dir: 'down', point: ANCHOR }}
+        trianglePosition={{
+          dir: 'down',
+          point: { x: ANCHOR.x + POPUP_W / 2, y: ANCHOR.y },
+        }}
+        highlightOptionsVisible={false}
+        selectedStyle='highlight'
+        selectedColor='yellow'
+        popupWidth={POPUP_W}
+        popupHeight={POPUP_H}
+        onHighlight={vi.fn()}
+        onDismiss={vi.fn()}
+      />
+      {extra}
+    </div>,
+  );
+
+describe('AnnotationPopup anchoring', () => {
+  it('anchors to the book cell it is positioned against, not the viewport', () => {
+    const { container } = renderInCell();
+    const cell = container.querySelector('#gridcell-test') as HTMLElement;
+    const popup = container.querySelector('#popup-container') as HTMLElement;
+    const cellRect = cell.getBoundingClientRect();
+    const popupRect = popup.getBoundingClientRect();
+    expect({
+      x: Math.round(popupRect.left - cellRect.left),
+      y: Math.round(popupRect.top - cellRect.top),
+    }).toEqual(ANCHOR);
+  });
+
+  it('still yields the pixels it shares with the z-[44] handle layer', () => {
+    const { container } = renderInCell(
+      // Stand-in for SelectionRangeEditor/AnnotationRangeEditor, which draw
+      // their grab handles over the selection the toolbar opens on. Inline
+      // styles, not Tailwind classes: this file is not a Tailwind source.
+      <div style={{ position: 'fixed', inset: 0, zIndex: 44, pointerEvents: 'none' }}>
+        <div
+          data-testid='handle'
+          style={{ position: 'absolute', inset: 0, pointerEvents: 'auto' }}
+        />
+      </div>,
+    );
+    const popupRect = (
+      container.querySelector('#popup-container') as HTMLElement
+    ).getBoundingClientRect();
+    const hit = document.elementFromPoint(
+      popupRect.left + popupRect.width / 2,
+      popupRect.top + popupRect.height / 2,
+    ) as HTMLElement | null;
+    expect(hit?.dataset['testid']).toBe('handle');
+  });
+});

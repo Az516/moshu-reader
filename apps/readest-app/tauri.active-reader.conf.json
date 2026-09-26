@@ -1,0 +1,15 @@
+{
+  "productName": "Active Reader",
+  "identifier": "local.activereader.desktop",
+  "version": "0.1.10",
+  "build": {
+    "beforeBuildCommand": "pnpm build",
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:3000"
+  },
+  "bundle": {
+    "createUpdaterArtifacts": false,
+    "targets": ["app"],
+    "macOS": { "signingIdentity": "-" }
+  }
+}

@@ -1,0 +1,66 @@
+.modian-mascot {
+  display: block;
+  flex: 0 0 auto;
+  object-fit: contain;
+  transform-origin: 50% 80%;
+}
+
+.modian-mascot[data-motion='enter'] {
+  animation: modian-mascot-enter 180ms ease-out both;
+}
+
+.modian-mascot[data-motion='working'] {
+  animation: modian-mascot-working 180ms ease-out both;
+}
+
+.modian-mascot[data-motion='success'] {
+  animation: modian-mascot-success 220ms ease-out both;
+}
+
+@keyframes modian-mascot-enter {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes modian-mascot-working {
+  from {
+    opacity: 0.72;
+    transform: translateY(2px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes modian-mascot-success {
+  0% {
+    filter: drop-shadow(0 0 0 rgb(190 132 47 / 0));
+    transform: scale(0.98);
+  }
+  60% {
+    filter: drop-shadow(0 0 8px rgb(190 132 47 / 0.32));
+    transform: scale(1.025);
+  }
+  100% {
+    filter: drop-shadow(0 0 0 rgb(190 132 47 / 0));
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modian-mascot[data-motion] {
+    animation: none;
+  }
+}
+
+[data-eink='true'] .modian-mascot[data-motion] {
+  animation: none;
+  filter: grayscale(1) contrast(1.08);
+}
