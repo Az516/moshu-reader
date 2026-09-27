@@ -9,7 +9,7 @@
  * screens — and leaves the sidebar alone.
  */
 
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { eventDispatcher } from '@/utils/event';
 import { BookNote } from '@/types/book';
@@ -248,9 +248,21 @@ vi.mock('@/app/reader/components/annotator/ImportAnnotationsDialog', () => ({
 
 vi.mock('@/app/reader/components/annotator/AnnotationPopup', () => ({
   default: (props: {
+    buttons: { label?: string; tooltipText: string; onClick: () => void; disabled?: boolean }[];
     noteEditor?: NoteEditorStub | null;
     onEditNote?: (note: { id: string }) => void;
-  }) => stub.render('popup', props.noteEditor, props.onEditNote),
+  }) => (
+    <>
+      {!props.noteEditor &&
+        props.buttons.map((button) => (
+          // Pass React's click event through, just as the real toolbar button does.
+          <button key={button.tooltipText} onClick={button.onClick} disabled={button.disabled}>
+            {button.label || button.tooltipText}
+          </button>
+        ))}
+      {stub.render('popup', props.noteEditor, props.onEditNote)}
+    </>
+  ),
 }));
 vi.mock('@/app/reader/components/annotator/NoteEditorSheet', () => ({
   default: (props: NoteEditorStub) => stub.render('sheet', props),
@@ -267,7 +279,7 @@ const setViewport = (width: number, height: number) => {
   });
 };
 
-const selectText = async () => {
+const selectText = async (annotated = false) => {
   // repositionPopups needs the book's grid cell to measure against.
   if (!document.querySelector('#gridcell-book-1')) {
     const gridCell = document.createElement('div');
@@ -285,6 +297,7 @@ const selectText = async () => {
       range,
       index: 0,
       cfi: 'epubcfi(/6/2!/4/2)',
+      annotated,
     });
   });
 };
@@ -302,6 +315,7 @@ const liveAnnotations = () => h.config.booknotes.filter((note) => !note.deletedA
 beforeEach(() => {
   h.actions = null;
   h.config.booknotes = [];
+  h.viewSettings.annotationToolbarItems = ['annotate'];
   h.viewSettings.copyToNotebook = false;
   // Mirror the real store: write back whatever array it is handed, since the
   // note-text save builds a new array rather than mutating in place.
@@ -383,6 +397,23 @@ describe('Annotate opens the note editor at the selection', () => {
     createdAt: 1,
     updatedAt: 1,
   };
+
+  test('clicking Remove deletes the existing mark instead of treating the click event as a restyle', async () => {
+    h.viewSettings.annotationToolbarItems = ['highlight'];
+    h.config.booknotes = [{ ...existingNote, note: '', page: 1 }];
+    render(<Annotator bookKey='book-1' contentInsets={{ top: 0, right: 0, bottom: 0, left: 0 }} />);
+    await selectText(true);
+
+    fireEvent.click(screen.getByRole('button', { name: '移除' }));
+
+    expect(liveAnnotations()).toHaveLength(0);
+    expect(h.config.booknotes).toEqual([
+      expect.objectContaining({ id: 'existing-note', deletedAt: expect.any(Number) }),
+    ]);
+    expect(h.updateBooknotes).toHaveBeenLastCalledWith('book-1', h.config.booknotes);
+    expect(h.saveConfig).toHaveBeenLastCalledWith({}, 'book-1', h.config, settings);
+    expect(screen.queryByRole('button', { name: '移除' })).toBeNull();
+  });
 
   const editExistingNote = async () => {
     h.config.booknotes = [{ ...existingNote }];

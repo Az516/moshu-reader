@@ -72,7 +72,7 @@ pnpm worktree:new 3837              # Checkout PR #3837 with push access to fork
 ## Active Reader 本地数据约定
 
 - 本地版用户的笔记、疑问、阅读进度、普通对话和主题历史必须通过 `AppService` 保存在本机；不可接入云端数据库、账号同步或后台上传来持久化这些内容。
-- 单书成果位于 `Books/<bookHash>/`；主题历史使用 `AppService` 的 `Data` 基目录下的 `thematic-research.json`（macOS 默认实际路径为 `Readest/thematic-research.json`，没有额外的 `Data/` 层）。普通对话使用 `reading-dialogues.json`，笔记/疑问使用 `reading-method.json`，模式与章节思考使用 `reading-modes.json`。
+- 单书成果位于 `Books/<bookHash>/`；主题历史使用 `AppService` 的 `Data` 基目录下的 `thematic-research.json`（macOS 默认实际路径为 `Readest/thematic-research.json`，没有额外的 `Data/` 层）。普通对话使用 `reading-dialogues.json`，笔记/疑问使用 `reading-method.json`，模式与章节思考使用 `reading-modes.json`；整书感悟与 AI 分析稿使用 `book-notes.json`。「本书笔记」聚合已有记录，不另存一份原生批注；外部只读接口见 `docs/notes-mcp.md`。
 - 修改这些格式时同步更新验证器、版本化备份清单、恢复合并和回归测试。使用 `localReaderPersistence` 的串行安全替换与有效备份恢复，不直接覆盖 JSON。
 - 用户主动使用 AI 时可按当前功能发送限量问题、片段与必要上下文；这不改变本地存储约定。测试默认使用本地模拟模型，不调用真实服务或读取用户密钥。
 - 当前产品 Web 回归使用 `pnpm test:e2e:web`；上游 UI 与已移除工作流的历史测试单独保留，不作为墨书当前界面的验收依据。

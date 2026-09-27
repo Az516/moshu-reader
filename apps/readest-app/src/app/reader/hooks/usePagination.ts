@@ -236,6 +236,14 @@ export const usePagination = (
       if (msg.data && msg.data.bookKey === bookKey) {
         const viewSettings = getViewSettings(bookKey)!;
         if (msg.data.type === 'iframe-single-click') {
+          // Local text interactions do not need native window coordinates.
+          if (
+            eventDispatcher.dispatchSync('iframe-single-click', {
+              ...msg.data,
+              bookKey,
+            })
+          )
+            return;
           const viewElement = containerRef.current;
           if (viewElement) {
             const { screenX } = msg.data;
@@ -257,43 +265,37 @@ export const usePagination = (
             }
             const viewStartX = windowStartX + viewRect.left;
             const viewCenterX = viewStartX + viewRect.width / 2;
-            const consumed = eventDispatcher.dispatchSync('iframe-single-click');
-            if (!consumed) {
-              const centerStartX = viewStartX + viewRect.width * 0.375;
-              const centerEndX = viewStartX + viewRect.width * 0.625;
-              if (
-                viewSettings.disableClick! ||
-                (screenX >= centerStartX && screenX <= centerEndX)
-              ) {
-                // toggle visibility of the header bar and the footer bar
-                setHoveredBookKey(hoveredBookKey ? null : bookKey);
-                return;
-              }
-
-              if (hoveredBookKey) {
-                setHoveredBookKey(null);
-                return;
-              }
-
-              const side: PaginationSide =
-                screenX >= viewCenterX
-                  ? viewSettings.fullscreenClickArea
-                    ? 'down'
-                    : viewSettings.swapClickArea
-                      ? 'left'
-                      : 'right'
-                  : viewSettings.fullscreenClickArea
-                    ? 'down'
-                    : viewSettings.swapClickArea
-                      ? 'right'
-                      : 'left';
-
-              if (viewSettings.readingRulerEnabled && dispatchReadingRulerMove(side)) {
-                return;
-              }
-
-              viewPagination(viewRef.current, viewSettings, side);
+            const centerStartX = viewStartX + viewRect.width * 0.375;
+            const centerEndX = viewStartX + viewRect.width * 0.625;
+            if (viewSettings.disableClick! || (screenX >= centerStartX && screenX <= centerEndX)) {
+              // toggle visibility of the header bar and the footer bar
+              setHoveredBookKey(hoveredBookKey ? null : bookKey);
+              return;
             }
+
+            if (hoveredBookKey) {
+              setHoveredBookKey(null);
+              return;
+            }
+
+            const side: PaginationSide =
+              screenX >= viewCenterX
+                ? viewSettings.fullscreenClickArea
+                  ? 'down'
+                  : viewSettings.swapClickArea
+                    ? 'left'
+                    : 'right'
+                : viewSettings.fullscreenClickArea
+                  ? 'down'
+                  : viewSettings.swapClickArea
+                    ? 'right'
+                    : 'left';
+
+            if (viewSettings.readingRulerEnabled && dispatchReadingRulerMove(side)) {
+              return;
+            }
+
+            viewPagination(viewRef.current, viewSettings, side);
           }
         } else if (
           msg.data.type === 'iframe-wheel' &&

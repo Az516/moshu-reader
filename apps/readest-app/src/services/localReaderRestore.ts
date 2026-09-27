@@ -19,14 +19,16 @@ import {
 } from '@/features/reading-modes/dialogue-history';
 import { readLocalReaderJSON, writeLocalReaderJSON } from './localReaderPersistence';
 import { stableJSON } from './localReaderMerge';
+import { mergeBookNotesData, validateBookNotesData } from '@/features/book-notes/data';
+import type { BookNotesData } from '@/features/book-notes/types';
 
 export const READER_BACKUP_MANIFEST = 'active-reader-backup.json';
 export const READER_THEME_ENTRY = 'active-reader/thematic-research.json';
 export const READER_THEME_PATH = 'thematic-research.json';
 export const isReaderBookFile = (path: string) =>
-  /^[^/]+\/reading-(method|modes|dialogues)\.json$/.test(path);
+  /^[^/]+\/(reading-(method|modes|dialogues)|book-notes)\.json$/.test(path);
 export const isReaderBackupFile = (path: string) =>
-  /\/reading-(method|modes|dialogues)\.json\.(backup|tmp-|corrupt-)/.test(path);
+  /\/(reading-(method|modes|dialogues)|book-notes)\.json\.(backup|tmp-|corrupt-)/.test(path);
 export const validArchivePath = (path: string) =>
   !path.startsWith('/') &&
   !path.includes('\\') &&
@@ -81,6 +83,11 @@ export function readerDocumentAdapter(path: string, base: BaseDir) {
       merge: (a: unknown, b: unknown) => mergeResearchFiles(a as ResearchFile, b as ResearchFile),
     };
   if (base !== 'Books' || !isReaderBookFile(path)) return null;
+  if (path.endsWith('/book-notes.json'))
+    return {
+      validate: (value: unknown) => validateBookNotesData(value, hash),
+      merge: (a: unknown, b: unknown) => mergeBookNotesData(a as BookNotesData, b as BookNotesData),
+    };
   if (path.endsWith('/reading-method.json'))
     return {
       validate: (value: unknown) => validateReadingData(value, hash),

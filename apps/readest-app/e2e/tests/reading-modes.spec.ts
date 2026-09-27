@@ -10,7 +10,8 @@ test('分析阅读的跟随和纸张设置可操作，重开保留阅读模式�
   await library.importBook(SAMPLE_EPUB);
   await library.openFirstBook();
   await page.getByRole('button', { name: /分析阅读/ }).click();
-  await page.getByLabel('显示阅读工具栏', { exact: true }).click();
+  if ((await page.locator('.moshu-root').getAttribute('data-chrome')) === 'hidden')
+    await page.getByLabel('显示阅读工具栏', { exact: true }).click();
   await page.getByRole('button', { name: '固定工具栏', exact: true }).click();
   const follow = page.getByRole('button', { name: /字句跟随/ });
   if ((await follow.getAttribute('aria-pressed')) !== 'true') await follow.click();

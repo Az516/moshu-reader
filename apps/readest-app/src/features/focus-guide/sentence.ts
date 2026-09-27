@@ -98,6 +98,7 @@ export function sentenceAtPoint(doc: Document, x: number, y: number) {
   const start = Math.min(Math.max(0, Math.floor(center / 4) * 4 - 2), maxStart);
   return {
     element,
+    caretRect: rect,
     start: sentence.index,
     end: sentence.index + sentence.segment.length,
     range: makeRange(sentence.index, sentence.index + sentence.segment.length),

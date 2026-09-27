@@ -34,6 +34,7 @@ import {
   reorderToolbar,
 } from '@/utils/annotationToolbar';
 import { canShareText } from '@/utils/share';
+import { eventDispatcher } from '@/utils/event';
 import SubPageHeader from './SubPageHeader';
 
 type ZoneId = 'toolbar' | 'available';
@@ -154,6 +155,7 @@ const AnnotationToolbarCustomizer: React.FC<AnnotationToolbarCustomizerProps> = 
   const { getViewSettings } = useReaderStore();
   const { settings } = useSettingsStore();
   const viewSettings = getViewSettings(bookKey) || settings.globalViewSettings;
+  const customized = viewSettings.annotationToolbarCustomized;
 
   const canShare = canShareText(appService);
 
@@ -161,14 +163,16 @@ const AnnotationToolbarCustomizer: React.FC<AnnotationToolbarCustomizerProps> = 
   // If the user enabled it on a share-capable device (e.g. their phone) and it
   // synced here, we must not drop it just because the user edits the toolbar on
   // this device — preserve it across persists so the capable device keeps it.
-  const savedHasShare = getToolbarToolTypes(viewSettings.annotationToolbarItems, true).includes(
-    'share',
-  );
+  const savedHasShare = getToolbarToolTypes(
+    viewSettings.annotationToolbarItems,
+    true,
+    customized,
+  ).includes('share');
   const preserveHiddenShare = !canShare && savedHasShare;
 
   const [items, setItems] = useState<Record<ZoneId, AnnotationToolType[]>>(() => ({
-    toolbar: getToolbarToolTypes(viewSettings.annotationToolbarItems, canShare),
-    available: getAvailableToolTypes(viewSettings.annotationToolbarItems, canShare),
+    toolbar: getToolbarToolTypes(viewSettings.annotationToolbarItems, canShare, customized),
+    available: getAvailableToolTypes(viewSettings.annotationToolbarItems, canShare, customized),
   }));
   // dnd-kit invokes onDragEnd with the handler captured at drag start, so the
   // closed-over `items` is stale by the time a cross-zone drag finishes. Read
@@ -178,6 +182,7 @@ const AnnotationToolbarCustomizer: React.FC<AnnotationToolbarCustomizerProps> = 
   // Snapshot taken on drag start so an aborted drag can be fully reverted —
   // onDragOver mutates `items` live as the pointer crosses zones.
   const beforeDragRef = useRef<Record<ZoneId, AnnotationToolType[]> | null>(null);
+  const saveQueue = useRef<Promise<void>>(Promise.resolve());
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -215,13 +220,31 @@ const AnnotationToolbarCustomizer: React.FC<AnnotationToolbarCustomizerProps> = 
       preserveHiddenShare && !toolbar.includes('share')
         ? [...toolbar, 'share' as AnnotationToolType]
         : toolbar;
-    saveViewSettings(envConfig, bookKey, 'annotationToolbarItems', toSave, false, true);
+    // Keep the flag and its items together, including across rapid successive edits.
+    saveQueue.current = saveQueue.current
+      .then(async () => {
+        await saveViewSettings(
+          envConfig,
+          bookKey,
+          'annotationToolbarCustomized',
+          true,
+          false,
+          false,
+        );
+        await saveViewSettings(envConfig, bookKey, 'annotationToolbarItems', toSave, false, true);
+      })
+      .catch(() => {
+        eventDispatcher.dispatch('toast', {
+          type: 'error',
+          message: _('工具栏保存失败，请重试。'),
+        });
+      });
   };
 
   // Commit a new toolbar order: keep the user's arrangement, recompute the
   // available tray as its canonical-order complement, and persist.
   const commit = (toolbar: AnnotationToolType[]) => {
-    setItems({ toolbar, available: getAvailableToolTypes(toolbar, canShare) });
+    setItems({ toolbar, available: getAvailableToolTypes(toolbar, canShare, true) });
     persist(toolbar);
   };
 

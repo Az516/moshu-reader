@@ -13,7 +13,8 @@ test('阅读操作入口随窗格宽度重排，窄窗仍可打开目录、笔�
   await library.openFirstBook();
   await page.getByRole('button', { name: /分析阅读/ }).click();
   await expect(page.locator('foliate-view')).toBeVisible();
-  await page.getByLabel('显示阅读工具栏', { exact: true }).click();
+  if ((await page.locator('.moshu-root').getAttribute('data-chrome')) === 'hidden')
+    await page.getByLabel('显示阅读工具栏', { exact: true }).click();
   await page.getByRole('button', { name: '固定工具栏', exact: true }).click();
   await page.getByRole('button', { name: '目录', exact: true }).click();
   await page

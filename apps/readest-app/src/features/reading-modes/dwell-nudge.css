@@ -1,0 +1,48 @@
+.moshu-dwell-anchor,
+.moshu-root .moshu-dwell-anchor {
+  position: fixed;
+  z-index: 45;
+  visibility: hidden;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 44px;
+  padding-block: 6px;
+  padding-inline: 7px 12px;
+  border: 1px solid var(--line, var(--color-base-content));
+  border-radius: 12px;
+  color: var(--ink, var(--color-base-content));
+  background: var(--paper, var(--color-base-100));
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.5;
+  text-align: start;
+  cursor: pointer;
+  box-shadow: none;
+  animation: none;
+  transition: none;
+}
+
+.moshu-dwell-anchor > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.moshu-dwell-anchor:focus-visible,
+.moshu-root .moshu-dwell-anchor:focus-visible {
+  outline: 2px solid var(--ink, var(--color-base-content));
+  outline-offset: 3px;
+}
+
+[data-eink='true'] .moshu-dwell-anchor {
+  border-color: var(--ink, var(--color-base-content));
+  box-shadow: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .moshu-dwell-anchor,
+  .moshu-dwell-anchor * {
+    animation: none;
+    transition: none;
+  }
+}

@@ -23,17 +23,64 @@ describe('annotationToolbar helpers', () => {
     expect(ALL_ANNOTATION_TOOL_TYPES).toEqual(annotationToolButtons.map((b) => b.type));
   });
 
-  test('default toolbar groups dialogue, note and marking before the compact reading utilities', () => {
+  test('default toolbar offers dialogue, marking, notes and questions', () => {
     expect(DEFAULT_ANNOTATION_TOOLBAR_ITEMS).toEqual([
       'ask-reading',
-      'annotate',
       'highlight',
-      'dictionary',
-      'translate',
-      'tts',
+      'annotate',
+      'save-question',
     ]);
     expect(DEFAULT_ANNOTATION_TOOLBAR_ITEMS).not.toContain('copy');
     expect(DEFAULT_ANNOTATION_TOOLBAR_ITEMS).not.toContain('share');
+  });
+
+  test('existing default layouts also adopt the four reading actions', () => {
+    expect(
+      getToolbarToolTypes(
+        [
+          'ask-reading',
+          'save-question',
+          'write-understanding',
+          'copy',
+          'highlight',
+          'annotate',
+          'search',
+          'dictionary',
+          'translate',
+          'tts',
+          'proofread',
+        ],
+        true,
+      ),
+    ).toEqual(DEFAULT_ANNOTATION_TOOLBAR_ITEMS);
+    expect(
+      getToolbarToolTypes(
+        [
+          'ask-reading',
+          'highlight',
+          'annotate',
+          'search',
+          'dictionary',
+          'translate',
+          'tts',
+          'proofread',
+        ],
+        true,
+      ),
+    ).toEqual(DEFAULT_ANNOTATION_TOOLBAR_ITEMS);
+    expect(
+      getToolbarToolTypes(
+        ['ask-reading', 'annotate', 'highlight', 'dictionary', 'translate', 'tts'],
+        true,
+      ),
+    ).toEqual(DEFAULT_ANNOTATION_TOOLBAR_ITEMS);
+    expect(
+      getAvailableToolTypes(
+        ['ask-reading', 'annotate', 'highlight', 'dictionary', 'translate', 'tts'],
+        true,
+      ),
+    ).toContain('dictionary');
+    expect(getToolbarToolTypes(['annotate'], true)).toEqual(['annotate']);
   });
 
   test('copylink is opt-in: off the default toolbar, offered in the available tray', () => {
@@ -44,6 +91,26 @@ describe('annotationToolbar helpers', () => {
     expect(getToolbarToolTypes([...DEFAULT_ANNOTATION_TOOLBAR_ITEMS, 'copylink'], true)).toContain(
       'copylink',
     );
+  });
+
+  test('explicit customization survives even when it resembles a previous default', () => {
+    const customized = [
+      ...DEFAULT_ANNOTATION_TOOLBAR_ITEMS,
+      'dictionary',
+      'translate',
+      'tts',
+    ] as const;
+    expect(getToolbarToolTypes([...customized], true, true)).toEqual(customized);
+    expect(getAvailableToolTypes([...customized], true, true)).not.toContain('dictionary');
+    const reordered = [
+      'tts',
+      'translate',
+      'dictionary',
+      'highlight',
+      'annotate',
+      'ask-reading',
+    ] as const;
+    expect(getToolbarToolTypes([...reordered], true, true)).toEqual(reordered);
   });
 
   test('getToolbarToolTypes preserves order and falls back to default when undefined', () => {
@@ -126,15 +193,15 @@ describe('supportsProofread', () => {
   });
 });
 
-describe('shouldShowHighlightOptions (#5983)', () => {
+describe('shouldShowHighlightOptions', () => {
   const toolbarWithHighlight = DEFAULT_ANNOTATION_TOOLBAR_ITEMS;
   const toolbarWithoutHighlight = removeToolFromToolbar(
     DEFAULT_ANNOTATION_TOOLBAR_ITEMS,
     'highlight',
   );
 
-  test('shown for a fresh selection when the highlight tool is on the toolbar', () => {
-    expect(shouldShowHighlightOptions(toolbarWithHighlight, {})).toBe(true);
+  test('fresh selections keep the style and color controls collapsed', () => {
+    expect(shouldShowHighlightOptions(toolbarWithHighlight, {})).toBe(false);
   });
 
   test('hidden for a fresh selection when the highlight tool is off the toolbar', () => {
@@ -149,10 +216,10 @@ describe('shouldShowHighlightOptions (#5983)', () => {
     expect(shouldShowHighlightOptions(toolbarWithHighlight, { popup: true })).toBe(false);
   });
 
-  test('shown for a popup-window selection that carries a CFI', () => {
+  test('popup-window selections also wait until a mark is added', () => {
     expect(
       shouldShowHighlightOptions(toolbarWithHighlight, { popup: true, cfi: 'epubcfi(/6/4!/4/2)' }),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   test('hidden with no selection', () => {

@@ -15,7 +15,8 @@ async function open(page: Page, mode = '快速阅读') {
   await page.getByRole('button', { name: new RegExp(mode) }).click();
 }
 async function tools(page: Page) {
-  await page.mouse.move((page.viewportSize()?.width ?? 1440) / 2, 6);
+  if ((await page.locator('.moshu-root').getAttribute('data-chrome')) === 'hidden')
+    await page.getByLabel('显示阅读工具栏', { exact: true }).click();
   await expect(page.locator('.moshu-topbar')).toHaveCSS('opacity', '1');
 }
 async function prose(page: Page) {
@@ -68,10 +69,11 @@ test('reader: stable viewport, explicit dwell marks, and single/double page roun
   await expect(page.locator('[data-sentence-guide]')).toHaveCSS('visibility', 'visible');
   await expect(page.locator('[data-sentence-guide]')).toHaveText('');
   const viewport = await page.locator('foliate-view').boundingBox();
-  await expect(page.getByLabel('停留提醒', { exact: true })).toBeVisible({ timeout: 10000 });
+  const nudge = page.getByRole('button', { name: '小墨停留提醒', exact: true });
+  await expect(nudge).toBeVisible({ timeout: 10000 });
   await expect(page.locator('[data-question-highlight]')).toHaveCount(0);
   await capture(page, 'dwell-before-mark');
-  await page.getByRole('button', { name: '在这里停了一会，要记点什么吗？' }).click();
+  await nudge.click();
   await page.getByRole('radio', { name: '字 横线' }).click();
   await page.getByRole('button', { name: '留下疑问', exact: true }).click();
   await expect(page.locator('[data-question-highlight]')).not.toHaveCount(0);
@@ -242,7 +244,6 @@ test('thematic: true SSE streaming, formatted output, stop/retry, citations and 
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   try {
     await open(page, '主题阅读');
-    await tools(page);
     await page.getByLabel('更多主题阅读操作', { exact: true }).click();
     await page.getByRole('button', { name: '小墨设置', exact: true }).click();
     await page.locator('[data-reading-ai-config] summary').click();

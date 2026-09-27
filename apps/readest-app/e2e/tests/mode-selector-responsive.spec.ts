@@ -65,7 +65,8 @@ test('阅读入口在不同窗口完整显示，切换和返回保持可操作',
   await expect(selector).toBeHidden();
   await expect(page.locator('foliate-view')).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Sidebar', exact: true })).toBeVisible();
-  await page.mouse.move(640, 6);
+  if ((await page.locator('.moshu-root').getAttribute('data-chrome')) === 'hidden')
+    await page.getByLabel('显示阅读工具栏', { exact: true }).click();
   await page.getByRole('button', { name: /切换模式/ }).click();
   await expect(selector).toBeVisible();
   await expect(selector.getByRole('button', { name: /返回阅读/ })).toBeInViewport({ ratio: 1 });

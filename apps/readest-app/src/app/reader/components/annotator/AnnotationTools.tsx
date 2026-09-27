@@ -3,7 +3,7 @@ import { PiChatCircleText, PiQuestion, PiNotebook } from 'react-icons/pi';
 import { FiSearch } from 'react-icons/fi';
 import { FiLink } from 'react-icons/fi';
 import { FiShare } from 'react-icons/fi';
-import { PiHighlighterFill } from 'react-icons/pi';
+import { PiHighlighter } from 'react-icons/pi';
 import { LuBookA } from 'react-icons/lu';
 import { BsPencilSquare } from 'react-icons/bs';
 import { BsTranslate } from 'react-icons/bs';
@@ -37,8 +37,8 @@ export const annotationToolButtons = createAnnotationToolButtons([
   },
   {
     type: 'save-question',
-    label: _('Save a reading question'),
-    tooltip: _('Keep a question and continue reading'),
+    label: _('疑问'),
+    tooltip: _('留下疑问，稍后再想'),
     Icon: PiQuestion,
   },
   {
@@ -58,7 +58,7 @@ export const annotationToolButtons = createAnnotationToolButtons([
     label: _('Highlight'),
     tooltip: _('Highlight text after selection'),
     shortcutAction: 'onHighlightSelection',
-    Icon: PiHighlighterFill,
+    Icon: PiHighlighter,
     quickAction: true,
   },
   {

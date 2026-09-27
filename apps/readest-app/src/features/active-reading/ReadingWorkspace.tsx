@@ -24,7 +24,11 @@ import type { ReadingData, ReadingRecord } from './data';
 import { askReadingAI, defaultAIConfig, loadAIConfig, readAIKey, saveAIConfig } from './ai';
 import { actionTab, useReadingSession } from './session';
 
-export function AIConnection() {
+export function AIConnection({
+  contextDescription = '提问时只发送所选片段和必要邻文。',
+}: {
+  contextDescription?: string;
+} = {}) {
   const [config, setConfig] = useState(defaultAIConfig);
   const [key, setKey] = useState('');
   const [savedKey, setSavedKey] = useState(false);
@@ -49,7 +53,7 @@ export function AIConnection() {
       await saveAIConfig(config, key, clear);
       setKey('');
       setSavedKey(Boolean(await readAIKey()));
-      setMessage(clear ? '已移除 API Key。' : '配置已保存。提问时只发送所选片段和必要邻文。');
+      setMessage(clear ? '已移除 API Key。' : `配置已保存。${contextDescription}`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '保存失败，请重试。');
     } finally {

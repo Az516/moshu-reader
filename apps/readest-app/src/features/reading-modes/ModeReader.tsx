@@ -1,11 +1,13 @@
 'use client';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import dynamic from 'next/dynamic';
 import {
   PiArrowLeft,
   PiArrowRight,
   PiBookOpen,
   PiCaretDown,
   PiChatCircleText,
+  PiCheck,
   PiGear,
   PiBookmarkSimple,
   PiPushPin,
@@ -41,7 +43,9 @@ import {
 } from '../active-reading/data';
 import { useReadingSession, sourceFromSelection } from '../active-reading/session';
 import { AIConnection } from '../active-reading/ReadingWorkspace';
-import SentenceGuide from '../focus-guide/SentenceGuide';
+import SentenceGuide, { type DwellAnchor } from '../focus-guide/SentenceGuide';
+import DwellNudge from './DwellNudge';
+import FollowStyleMenu from './FollowStyleMenu';
 import ModeSelector, { modeNames } from './ModeSelector';
 import IconButton from './IconButton';
 import ReadingBackgroundMenu from './ReadingBackgroundMenu';
@@ -63,10 +67,59 @@ import {
   chapterStorageKey,
   pageLayoutSettings,
   readChapterEntry,
+  getFollowStyle,
   type ModeState,
   type ReadingMode,
 } from './state';
 import './modes.css';
+import '../book-notes/book-notes.css';
+
+const BookNotesWorkspace = dynamic(() => import('../book-notes/BookNotesWorkspace'), {
+  ssr: false,
+});
+
+const QUESTION_STYLE_PREFERENCE = 'moshu-question-marker-style';
+const questionStyles = [
+  ['underline', '横线'],
+  ['squiggly', '波浪线'],
+  ['highlight', '高亮'],
+] as const;
+
+const preferredQuestionStyle = (): HighlightStyle => {
+  const saved =
+    typeof window === 'undefined' ? null : localStorage.getItem(QUESTION_STYLE_PREFERENCE);
+  return saved === 'highlight' || saved === 'squiggly' ? saved : 'underline';
+};
+
+function QuestionStylePicker({
+  value,
+  onChange,
+}: {
+  value: HighlightStyle;
+  onChange: (style: HighlightStyle) => void;
+}) {
+  return (
+    <div className='moshu-mark-style' role='radiogroup' aria-label='疑问标记样式'>
+      {questionStyles.map(([style, label]) => (
+        <button
+          key={style}
+          type='button'
+          role='radio'
+          aria-label={label}
+          aria-checked={value === style}
+          className={`eink-bordered ${value === style ? 'is-active' : ''}`}
+          onClick={() => onChange(style)}
+        >
+          <span aria-hidden='true' className={`moshu-mark-sample is-${style}`}>
+            字
+          </span>
+          {label}
+          {value === style && <PiCheck aria-hidden='true' />}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 export default function ModeReader({
   bookKey,
@@ -104,9 +157,15 @@ export default function ModeReader({
   const request = useReadingSession((s) => s.request);
   const [state, setState] = useState<ModeState | null>(null);
   const [selector, setSelector] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false);
+  const [notesRequest, setNotesRequest] = useState<{
+    nonce: number;
+    source?: ReadingSource;
+    draft?: string;
+  } | null>(null);
   const choosing = !state?.mode || selector;
   const thematicOpen = state?.mode === 'thematic';
-  const hideSidebar = choosing || thematicOpen;
+  const hideSidebar = choosing || thematicOpen || notesOpen;
   useEffect(() => {
     if (!hideSidebar) return;
     const wasVisible = useSidebarStore.getState().isSideBarVisible;
@@ -121,7 +180,9 @@ export default function ModeReader({
   const [records, setRecords] = useState<ReadingRecord[]>([]);
   const [dialogue, setDialogue] = useState<{ source: ReadingSource; quick?: boolean } | null>(null);
   const [dwell, setDwell] = useState<ReadingSource | null>(null);
-  const [dwellStyle, setDwellStyle] = useState<HighlightStyle>('highlight');
+  const [dwellAnchor, setDwellAnchor] = useState<DwellAnchor | null>(null);
+  const [dwellSequence, setDwellSequence] = useState(-1);
+  const [dwellStyle, setDwellStyle] = useState<HighlightStyle>(preferredQuestionStyle);
   const [activeQuestion, setActiveQuestion] = useState<ReadingRecord | null>(null);
   const [message, setMessage] = useState('');
   const [locatedSource, setLocatedSource] = useState<ReadingSource | null>(null);
@@ -165,6 +226,8 @@ export default function ModeReader({
     setDwell(null);
     setActiveQuestion(null);
     setRecords([]);
+    setNotesOpen(false);
+    setNotesRequest(null);
     useNotebookStore.getState().setNotebookVisible(false);
     if (appService)
       void Promise.all([
@@ -178,15 +241,6 @@ export default function ModeReader({
       alive.current = false;
     };
   }, [appService, hash, reloadRecords]);
-  useEffect(() => {
-    if (request?.bookKey !== bookKey || request.handled) return;
-    useReadingSession.setState({ request: { ...request, handled: true } });
-    useNotebookStore.getState().setNotebookVisible(false);
-    if (request.source) {
-      eventDispatcher.dispatchSync('dismiss-reading-selection', { bookKey });
-      setDialogue({ source: request.source });
-    } else setSelector(true);
-  }, [request, bookKey]);
   const change = async (mutate: (value: ModeState) => ModeState) => {
     if (!appService) throw new Error('书库尚未就绪');
     try {
@@ -217,6 +271,7 @@ export default function ModeReader({
     if (state?.mode === 'thematic')
       useThemeSourceReturn.getState().setOrigin({ bookHash: hash, cfi: view?.lastLocation?.cfi });
     useThemeSourceReturn.getState().setTarget(source);
+    setNotesOpen(false);
     setLocatedSource(null);
     setDialogue(null);
     setQuestionsOpen(false);
@@ -235,29 +290,92 @@ export default function ModeReader({
       void selectMode('analytical');
     }
   };
-  const saveQuestion = async (source: ReadingSource, markerStyle: HighlightStyle) => {
+  const saveQuestion = useCallback(
+    async (source: ReadingSource, markerStyle: HighlightStyle) => {
+      if (!appService) throw new Error('书库尚未就绪，请稍后再试。');
+      const now = new Date().toISOString();
+      const record: ReadingRecord = {
+        id: crypto.randomUUID(),
+        kind: 'question',
+        status: 'open',
+        userText: '这一句，我想稍后再想。',
+        originalText: '这一句，我想稍后再想。',
+        revisions: [],
+        source,
+        markerStyle,
+        createdAt: now,
+        updatedAt: now,
+      };
+      let alreadySaved = false;
+      await mutateReadingData(
+        appService,
+        emptyReadingData(hash, book?.title, book?.author),
+        (s) => {
+          // Check inside the serialized write so rapid repeat clicks cannot add duplicates.
+          alreadySaved = Boolean(
+            source.cfi &&
+              s.records.some(
+                (existing) =>
+                  existing.kind === 'question' &&
+                  existing.status !== 'discarded' &&
+                  existing.source?.cfi === source.cfi,
+              ),
+          );
+          return alreadySaved ? s : { ...s, records: [...s.records, record] };
+        },
+      );
+      await reloadRecords();
+      if (!alive.current || currentBook.current !== hash) return;
+      setDwell(null);
+      setMessage(
+        alreadySaved ? '这段原文已有疑问，已保留原记录。' : '疑问已留在原文页边，继续读吧。',
+      );
+    },
+    [appService, hash, book?.title, book?.author, reloadRecords],
+  );
+  const updateQuestionStyle = async (question: ReadingRecord, markerStyle: HighlightStyle) => {
     if (!appService) return;
-    const now = new Date().toISOString();
-    const record: ReadingRecord = {
-      id: crypto.randomUUID(),
-      kind: 'question',
-      status: 'open',
-      userText: '这一句，我想稍后再想。',
-      originalText: '这一句，我想稍后再想。',
-      revisions: [],
-      source,
-      markerStyle,
-      createdAt: now,
-      updatedAt: now,
-    };
-    await mutateReadingData(appService, emptyReadingData(hash, book?.title, book?.author), (s) => ({
-      ...s,
-      records: [...s.records, record],
-    }));
-    await reloadRecords();
-    setDwell(null);
-    setMessage('疑问已留在原文页边，继续读吧。');
+    try {
+      const next = await mutateReadingData(
+        appService,
+        emptyReadingData(hash, book?.title, book?.author),
+        (data) => ({
+          ...data,
+          records: data.records.map((record) =>
+            record.id === question.id
+              ? { ...record, markerStyle, updatedAt: new Date().toISOString() }
+              : record,
+          ),
+        }),
+      );
+      localStorage.setItem(QUESTION_STYLE_PREFERENCE, markerStyle);
+      if (!alive.current || currentBook.current !== hash) return;
+      setRecords(next.records);
+      setActiveQuestion((current) =>
+        current?.id === question.id
+          ? (next.records.find((record) => record.id === question.id) ?? null)
+          : current,
+      );
+    } catch (error) {
+      if (alive.current && currentBook.current === hash)
+        setMessage(error instanceof Error ? error.message : '标记样式保存失败，请重试。');
+    }
   };
+  useEffect(() => {
+    if (request?.bookKey !== bookKey || request.handled) return;
+    useReadingSession.setState({ request: { ...request, handled: true } });
+    useNotebookStore.getState().setNotebookVisible(false);
+    if (request.source) {
+      eventDispatcher.dispatchSync('dismiss-reading-selection', { bookKey });
+      if (request.action === 'question') {
+        setDialogue(null);
+        void saveQuestion(request.source, preferredQuestionStyle()).catch((error: unknown) => {
+          if (alive.current && currentBook.current === hash)
+            setMessage(error instanceof Error ? error.message : '保存失败，请重试。');
+        });
+      } else setDialogue({ source: request.source });
+    } else setSelector(true);
+  }, [request, bookKey, hash, saveQuestion]);
   const currentSource = () => {
     if (!view || !progress?.range) return undefined;
     try {
@@ -298,8 +416,16 @@ export default function ModeReader({
       setDialogue({ source });
     } else setMessage('请先在正文中选择一句话，再与小墨对话。');
   };
+  const openNotes = (source?: ReadingSource, draft?: string) => {
+    eventDispatcher.dispatchSync('dismiss-reading-selection', { bookKey });
+    setNotesRequest({ nonce: Date.now(), source, draft });
+    setNotesOpen(true);
+    setQuestionsOpen(false);
+    setDwell(null);
+  };
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
+      if (notesOpen) return;
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'e') {
         e.preventDefault();
         openDialogue();
@@ -425,18 +551,22 @@ export default function ModeReader({
       ref={rootRef}
       className='moshu-root'
       data-choosing={choosing}
+      data-notes-open={notesOpen}
       data-mode={state?.mode || 'choose'}
       data-traffic-light={Boolean(appService?.hasTrafficLight && (!sidebarVisible || thematic))}
       data-chrome={chrome.visible || pinned || choosing ? 'visible' : 'hidden'}
     >
-      {!thematic && (
+      {!thematic && !choosing && (
         <button
           type='button'
           className='moshu-chrome-reveal'
           aria-label='显示阅读工具栏'
           onFocus={chrome.reveal}
           onClick={chrome.reveal}
-        />
+          title='显示阅读工具栏'
+        >
+          <PiDotsThree aria-hidden='true' />
+        </button>
       )}
       <header
         className='moshu-topbar eink-bordered'
@@ -463,6 +593,11 @@ export default function ModeReader({
           </button>
         )}
         <div className='moshu-top-actions'>
+          {!choosing && (
+            <IconButton label='本书笔记' purpose='查看笔记、疑问和感悟' onClick={() => openNotes()}>
+              <PiBookmarkSimple />
+            </IconButton>
+          )}
           <IconButton
             label={pinned ? '取消固定工具栏' : '固定工具栏'}
             purpose='控制阅读工具栏是否常驻'
@@ -498,14 +633,33 @@ export default function ModeReader({
                   双页
                 </button>
               </div>
-              <button
-                type='button'
-                aria-pressed={state!.follow}
-                className='moshu-follow-toggle'
-                onClick={() => void change((s) => ({ ...s, follow: !s.follow }))}
-              >
-                字句跟随 <span>{state!.follow ? '开' : '关'}</span>
-              </button>
+              <div className='moshu-follow-controls'>
+                <button
+                  type='button'
+                  aria-pressed={state!.follow}
+                  className='moshu-follow-toggle'
+                  onClick={() => {
+                    setDwell(null);
+                    void change((s) => ({ ...s, follow: !s.follow })).catch(() => undefined);
+                  }}
+                >
+                  字句跟随 <span>{state!.follow ? '开' : '关'}</span>
+                </button>
+                <FollowStyleMenu
+                  value={getFollowStyle(state!)}
+                  lockLine={Boolean(state?.lockLine)}
+                  onChange={(followStyle) => {
+                    setDwell(null);
+                    void change((s) => ({ ...s, followStyle })).catch(() => undefined);
+                  }}
+                  onLockLineChange={(lockLine) => {
+                    setDwell(null);
+                    void change((s) => ({ ...s, lockLine, follow: lockLine || s.follow })).catch(
+                      () => undefined,
+                    );
+                  }}
+                />
+              </div>
               <IconButton
                 label='朗读'
                 purpose='播放或停止当前书籍朗读'
@@ -719,6 +873,7 @@ export default function ModeReader({
           book={book}
           onSelect={(m) => void selectMode(m)}
           onCancel={state.mode ? () => setSelector(false) : undefined}
+          onOpenNotes={() => openNotes()}
         />
       )}
       {thematic && !choosing && (
@@ -730,9 +885,7 @@ export default function ModeReader({
           onSwitchMode={() => setSelector(true)}
           onSettings={() => setSettingsOpen(true)}
           onLibrary={onLibrary}
-          onOpenNotes={() => {
-            void selectMode('analytical').then(() => setQuestionsOpen(true));
-          }}
+          onOpenNotes={() => openNotes()}
         />
       )}
       {inited && (
@@ -740,9 +893,12 @@ export default function ModeReader({
           bookKey={bookKey}
           enabled={Boolean(state?.follow)}
           variant={state?.mode === 'quick' ? 'focus-window' : 'emphasis'}
+          followStyle={state ? getFollowStyle(state) : 'classic'}
+          lockLine={Boolean(state?.lockLine)}
           remindersEnabled={Boolean(state?.mode === 'quick' && remindersAllowed(state))}
           paused={
             sidebarObscures ||
+            notesOpen ||
             layoutBusy ||
             choosing ||
             thematic ||
@@ -755,14 +911,16 @@ export default function ModeReader({
                 questionsOpen,
             )
           }
-          onDwell={(source) => {
-            setDwellStyle('underline');
+          onDwell={(source, anchor) => {
+            setDwellStyle(preferredQuestionStyle());
             setDwellExpanded(false);
             setDwell(source);
+            setDwellAnchor(anchor);
+            setDwellSequence((sequence) => sequence + 1);
           }}
         />
       )}
-      {!choosing && !thematic && !sidebarObscures && (
+      {!choosing && !thematic && !sidebarObscures && !notesOpen && (
         <QuestionMarkers bookKey={bookKey} records={records} onOpen={setActiveQuestion} />
       )}
       <QuestionFollowup
@@ -771,6 +929,7 @@ export default function ModeReader({
         enabled={Boolean(
           inited &&
             !choosing &&
+            !notesOpen &&
             !thematic &&
             !dialogue &&
             !dwell &&
@@ -782,16 +941,14 @@ export default function ModeReader({
         onResolved={reloadRecords}
         onOpenSource={openSource}
       />
-      {dwell && !dwellExpanded && (
-        <aside className='moshu-dwell-nudge eink-bordered' aria-label='停留提醒'>
-          <button type='button' onClick={() => setDwellExpanded(true)}>
-            <ModianMascot mood='question' size={28} motion='enter' />
-            在这里停了一会，要记点什么吗？
-          </button>
-          <IconButton label='忽略提醒' purpose='继续阅读' onClick={() => setDwell(null)}>
-            <PiX />
-          </IconButton>
-        </aside>
+      {dwell && dwellAnchor && !dwellExpanded && (
+        <DwellNudge
+          anchor={dwellAnchor}
+          view={view}
+          sequence={dwellSequence}
+          onOpen={() => setDwellExpanded(true)}
+          onDismiss={() => setDwell(null)}
+        />
       )}
       {dwell && dwellExpanded && (
         <section className='moshu-dwell-card' aria-label='小墨停留提醒'>
@@ -811,27 +968,13 @@ export default function ModeReader({
             </IconButton>
           </header>
           <blockquote>{dwell.excerpt}</blockquote>
-          <div className='moshu-mark-style' role='radiogroup' aria-label='疑问标记样式'>
-            {(
-              [
-                ['highlight', '荧光'],
-                ['underline', '横线'],
-                ['squiggly', '波浪'],
-              ] as const
-            ).map(([style, label]) => (
-              <button
-                key={style}
-                type='button'
-                role='radio'
-                aria-checked={dwellStyle === style}
-                className={dwellStyle === style ? 'is-active' : ''}
-                onClick={() => setDwellStyle(style)}
-              >
-                <span className={`moshu-mark-sample is-${style}`}>字</span>
-                {label}
-              </button>
-            ))}
-          </div>
+          <QuestionStylePicker
+            value={dwellStyle}
+            onChange={(style) => {
+              setDwellStyle(style);
+              localStorage.setItem(QUESTION_STYLE_PREFERENCE, style);
+            }}
+          />
           <div className='moshu-dwell-actions'>
             <button
               type='button'
@@ -882,6 +1025,10 @@ export default function ModeReader({
           }}
           onRemoved={() => {
             void reloadRecords();
+          }}
+          onOpenNotes={(source, draft) => {
+            setDialogue(null);
+            openNotes(source, draft);
           }}
         />
       )}
@@ -948,6 +1095,9 @@ export default function ModeReader({
                 <PiX />
               </IconButton>
             </header>
+            <button type='button' className='moshu-native-notes' onClick={() => openNotes()}>
+              <PiBookOpen /> 打开本书笔记 <PiArrowRight />
+            </button>
             <button
               type='button'
               className='moshu-native-notes'
@@ -1029,6 +1179,13 @@ export default function ModeReader({
           </header>
           <blockquote>{activeQuestion.source?.excerpt}</blockquote>
           <p>{activeQuestion.userText}</p>
+          <QuestionStylePicker
+            value={activeQuestion.markerStyle || 'underline'}
+            onChange={(style) => {
+              void updateQuestionStyle(activeQuestion, style);
+            }}
+          />
+          <small>选择后，也用于之后的新疑问</small>
           <footer>
             <QuestionAnswerLink record={activeQuestion} onOpenSource={openSource} />
             {activeQuestion.source && (
@@ -1064,6 +1221,20 @@ export default function ModeReader({
             </button>
           </footer>
         </section>
+      )}
+      {notesRequest && state && (
+        <BookNotesWorkspace
+          key={bookKey}
+          bookKey={bookKey}
+          open={notesOpen}
+          request={notesRequest}
+          modeState={state}
+          onClose={() => setNotesOpen(false)}
+          onOpenSource={openSource}
+          onRecordsChanged={() => {
+            void reloadRecords();
+          }}
+        />
       )}
     </div>
   );

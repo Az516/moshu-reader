@@ -7,6 +7,7 @@ import {
 import type { AppService } from '@/types/system';
 
 export type ReadingMode = 'quick' | 'analytical' | 'thematic';
+export type FollowStyle = 'classic' | 'soft';
 export type Reconstruction = {
   question: string;
   concepts: string;
@@ -20,6 +21,8 @@ export interface ModeState {
   bookHash: string;
   mode: ReadingMode | null;
   follow: boolean;
+  followStyle?: FollowStyle;
+  lockLine?: boolean;
   reminders: boolean;
   quietDate: string;
   stage: number;
@@ -33,6 +36,8 @@ export const emptyModeState = (bookHash: string): ModeState => ({
   bookHash,
   mode: null,
   follow: true,
+  followStyle: 'soft',
+  lockLine: false,
   reminders: true,
   quietDate: '',
   stage: 0,
@@ -40,6 +45,8 @@ export const emptyModeState = (bookHash: string): ModeState => ({
   reconstructions: {},
   intensive: [],
 });
+// Documents written before style selection keep their existing reading experience.
+export const getFollowStyle = (state: ModeState): FollowStyle => state.followStyle ?? 'classic';
 export const switchMode = (state: ModeState, mode: ReadingMode): ModeState => ({
   ...state,
   mode,
@@ -71,6 +78,11 @@ export function validateModeState(value: unknown, hash: string): asserts value i
     value['bookHash'] !== hash ||
     ![null, 'quick', 'analytical', 'thematic'].includes(value['mode'] as ReadingMode | null) ||
     typeof value['follow'] !== 'boolean' ||
+    (value['followStyle'] !== undefined &&
+      value['followStyle'] !== 'classic' &&
+      value['followStyle'] !== 'soft' &&
+      value['followStyle'] !== 'locked') ||
+    (value['lockLine'] !== undefined && typeof value['lockLine'] !== 'boolean') ||
     typeof value['reminders'] !== 'boolean' ||
     typeof value['quietDate'] !== 'string' ||
     !Number.isInteger(value['stage']) ||
@@ -84,6 +96,12 @@ export function validateModeState(value: unknown, hash: string): asserts value i
     !value['intensive'].every((target) => typeof target === 'string')
   )
     throw new Error('阅读方式记录无法读取，原文件已保留。');
+  // Normalize the former third style after validation, including files read by
+  // the backup/restore adapter. Loading alone never writes this change to disk.
+  if (value['followStyle'] === 'locked') {
+    value['followStyle'] = 'soft';
+    value['lockLine'] = true;
+  }
 }
 
 export const chapterStorageKey = (index: number, href?: string) => `section:${index}:${href || ''}`;

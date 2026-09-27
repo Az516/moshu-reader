@@ -1,7 +1,7 @@
 {
   "productName": "Active Reader",
   "identifier": "local.activereader.desktop",
-  "version": "0.1.10",
+  "version": "0.1.14",
   "build": {
     "beforeBuildCommand": "pnpm build",
     "beforeDevCommand": "pnpm dev",

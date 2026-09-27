@@ -17,7 +17,8 @@ test('阅读背景色票、页面和正文保持一致，重开保留选择', as
   await library.importBook(SAMPLE_TXT);
   await library.openFirstBook();
   await page.getByRole('button', { name: /分析阅读/ }).click();
-  await page.getByLabel('显示阅读工具栏', { exact: true }).click();
+  if ((await page.locator('.moshu-root').getAttribute('data-chrome')) === 'hidden')
+    await page.getByLabel('显示阅读工具栏', { exact: true }).click();
   await page.getByRole('button', { name: '固定工具栏', exact: true }).click();
   await expect(page.locator('.foliate-viewer iframe').first()).toBeAttached();
 

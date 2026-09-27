@@ -1,10 +1,11 @@
 import { Blob as NodeBlob } from 'node:buffer';
 import { afterEach, expect, it, vi } from 'vitest';
-import { ZipWriter, Uint8ArrayWriter } from '@zip.js/zip.js';
+import { ZipWriter, Uint8ArrayReader, Uint8ArrayWriter } from '@zip.js/zip.js';
 import type { AppService } from '@/types/system';
 import type { Book } from '@/types/book';
 import { emptyReadingData } from '@/features/active-reading/data';
 import { emptyModeState } from '@/features/reading-modes/state';
+import { emptyBookNotesData } from '@/features/book-notes/data';
 import { createResearch } from '@/features/reading-modes/thematic';
 import { addBackupEntriesToZip, restoreFromBackupZip } from './backupService';
 import { undoLastLocalRestore } from './localReaderRestore';
@@ -52,7 +53,50 @@ function memory(initialBooks: Book[]) {
   return { files, service };
 }
 
-it('round-trips all local reader documents through a real ZIP into a fresh library, then undoes the import', async () => {
+it.each([
+  false,
+  true,
+])('restores an existing ZIP with the legacy locked style without changing follow=%s', async (follow) => {
+  vi.stubGlobal('Blob', NodeBlob);
+  const hash = '1111111111111111111111111111aaaa';
+  const book: Book = {
+    hash,
+    title: 'Synthetic',
+    author: 'Author',
+    format: 'EPUB',
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const { lockLine: _lockLine, ...before } = emptyModeState(hash);
+  const legacy = { ...before, followStyle: 'locked', follow };
+  const writer = new ZipWriter(new Uint8ArrayWriter(), {
+    useWebWorkers: false,
+    useCompressionStream: false,
+  });
+  for (const [name, value] of Object.entries({
+    'library.json': [book],
+    [`${hash}/reading-modes.json`]: legacy,
+  })) {
+    await writer.add(name, new Uint8ArrayReader(new TextEncoder().encode(JSON.stringify(value))));
+  }
+  const zip = await writer.close();
+  const destination = memory([]);
+  await restoreFromBackupZip(destination.service, new NodeBlob([zip]) as unknown as Blob);
+  expect(JSON.parse(destination.files.get(`Books/${hash}/reading-modes.json`)!)).toEqual({
+    ...legacy,
+    followStyle: 'soft',
+    lockLine: true,
+  });
+});
+
+it.each([
+  ['classic', false],
+  ['classic', true],
+  ['soft', false],
+  ['soft', true],
+  ['locked', undefined],
+  [undefined, undefined],
+] as const)('round-trips local reader documents with %s style and lockLine %s through ZIP and undoes the import', async (followStyle, lockLine) => {
   vi.stubGlobal('Blob', NodeBlob);
   const hash = '1111111111111111111111111111aaaa';
   const book: Book = {
@@ -65,7 +109,43 @@ it('round-trips all local reader documents through a real ZIP into a fresh libra
   };
   const source = memory([book]);
   const date = '2026-09-24T00:00:00.000Z';
+  const modes = {
+    ...emptyModeState(hash),
+    followStyle,
+    lockLine,
+    captures: { chapter: 'Synthetic thought' },
+  };
+  if (followStyle === undefined) delete modes.followStyle;
+  if (lockLine === undefined) delete modes.lockLine;
   const documents: Record<string, unknown> = {
+    [`Books/${hash}/book-notes.json`]: {
+      ...emptyBookNotesData(hash),
+      reflections: [
+        {
+          id: 'reflection',
+          title: 'Synthetic reflection',
+          text: 'Independent draft',
+          references: ['reading:note'],
+          createdAt: date,
+          updatedAt: date,
+        },
+      ],
+      reports: [
+        {
+          id: 'report',
+          title: 'Synthetic report',
+          text: 'Model result',
+          model: 'test',
+          scope: 'all',
+          entryIds: ['reading:note'],
+          reflectionIds: [],
+          inputVersion: 'v1',
+          coverage: { entries: 1, reflections: 0, totalEntries: 1, totalReflections: 0 },
+          createdAt: date,
+          updatedAt: date,
+        },
+      ],
+    },
     [`Books/${hash}/reading-method.json`]: {
       ...emptyReadingData(hash),
       records: [
@@ -79,10 +159,7 @@ it('round-trips all local reader documents through a real ZIP into a fresh libra
         },
       ],
     },
-    [`Books/${hash}/reading-modes.json`]: {
-      ...emptyModeState(hash),
-      captures: { chapter: 'Synthetic thought' },
-    },
+    [`Books/${hash}/reading-modes.json`]: modes,
     [`Books/${hash}/reading-dialogues.json`]: {
       version: 1,
       bookHash: hash,
@@ -135,7 +212,11 @@ it('round-trips all local reader documents through a real ZIP into a fresh libra
   const destination = memory([]);
   await restoreFromBackupZip(destination.service, new NodeBlob([zip]) as unknown as Blob);
   for (const [path, value] of Object.entries(documents))
-    expect(JSON.parse(destination.files.get(path)!)).toEqual(value);
+    expect(JSON.parse(destination.files.get(path)!)).toEqual(
+      path === `Books/${hash}/reading-modes.json` && followStyle === 'locked'
+        ? { ...modes, followStyle: 'soft', lockLine: true }
+        : value,
+    );
   expect(destination.files.has('Data/unrelated-secret.json')).toBe(false);
   expect((await destination.service.loadLibraryBooks()).map((item) => item.hash)).toEqual([hash]);
   await undoLastLocalRestore(destination.service);

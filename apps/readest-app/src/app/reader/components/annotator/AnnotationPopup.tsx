@@ -4,6 +4,7 @@ import { PiDotsThreeBold } from 'react-icons/pi';
 import { Position } from '@/utils/sel';
 import { useResponsiveSize } from '@/hooks/useResponsiveSize';
 import { BookNote, HighlightColor, HighlightStyle } from '@/types/book';
+import type { AnnotationToolType } from '@/types/annotator';
 import Popup from '@/components/Popup';
 import {
   DropdownMenu,
@@ -15,6 +16,7 @@ import AnnotationToolButton from './AnnotationToolButton';
 import AnnotationNoteEditor from './AnnotationNoteEditor';
 import AnnotationNotes from './AnnotationNotes';
 import HighlightOptions from './HighlightOptions';
+import styles from './AnnotationPopup.module.css';
 
 export interface AnnotationNoteEditorTarget {
   value: string;
@@ -27,6 +29,7 @@ interface AnnotationPopupProps {
   dir: 'ltr' | 'rtl';
   isVertical: boolean;
   buttons: Array<{
+    type?: AnnotationToolType;
     tooltipText: string;
     Icon: React.ElementType;
     onClick: () => void;
@@ -171,6 +174,11 @@ const AnnotationPopup: React.FC<AnnotationPopupProps> = ({
   );
   const directButtons = isVertical ? visibleButtons : visibleButtons.slice(0, visibleCount);
   const overflowButtons = isVertical ? [] : visibleButtons.slice(visibleCount);
+  const toolbarVisible = notes.length === 0 && !noteEditor;
+  // Tighten only the horizontal padding so all four default labels fit on phones.
+  const toolPadding = popupWidth >= 400 ? 16 : Math.max(2, Math.min(12, (popupWidth - 310) / 8));
+  const hasDivider = (button: ToolbarButton, index: number) =>
+    button.type === 'ask-reading' && index < visibleButtons.length - 1;
   return (
     // The toolbar opens against the selection, which is where the range
     // editors' handles hang: the two overlap by design, and whichever layer
@@ -190,7 +198,15 @@ const AnnotationPopup: React.FC<AnnotationPopupProps> = ({
     // still makes the stacking context without moving anything.
     // `pointer-events-none` keeps the cell-covering wrapper from swallowing
     // the taps outside the popup that dismiss it.
-    <div dir={dir} className='pointer-events-none absolute inset-0 z-[43]'>
+    <div
+      dir={dir}
+      data-vertical={isVertical || undefined}
+      className={clsx(
+        'pointer-events-none absolute inset-0 z-[43]',
+        toolbarVisible && styles['toolbarFrame'],
+      )}
+      style={{ '--selection-tool-padding': `${toolPadding}px` } as React.CSSProperties}
+    >
       <Popup
         width={boxWidth}
         height={boxHeight}
@@ -207,22 +223,29 @@ const AnnotationPopup: React.FC<AnnotationPopupProps> = ({
           <div
             ref={toolbarRef}
             className={clsx(
-              'selection-buttons relative flex h-full w-full min-w-0 items-center justify-start gap-1 p-1.5',
-              isVertical ? 'flex-col overflow-y-auto' : 'flex-row overflow-hidden',
+              'selection-buttons relative flex h-full w-full min-w-0 items-center gap-1 p-[5px]',
+              isVertical
+                ? 'flex-col justify-start overflow-y-auto'
+                : 'flex-row justify-between overflow-hidden',
               (notes.length > 0 || noteEditor) && 'hidden',
             )}
             style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
           >
             {directButtons.map((button, index) => (
-              <AnnotationToolButton
-                key={`${button.tooltipText}-${index}`}
-                showTooltip={!highlightOptionsVisible}
-                tooltipText={button.tooltipText}
-                Icon={button.Icon}
-                onClick={button.onClick}
-                disabled={button.disabled}
-                label={isVertical ? undefined : button.label}
-              />
+              <div key={`${button.tooltipText}-${index}`} className={styles['toolSlot']}>
+                <AnnotationToolButton
+                  showTooltip={!highlightOptionsVisible}
+                  tooltipText={button.tooltipText}
+                  Icon={button.Icon}
+                  onClick={button.onClick}
+                  disabled={button.disabled}
+                  label={isVertical ? undefined : button.label}
+                  emphasized={button.type === 'ask-reading'}
+                />
+                {hasDivider(button, index) && (
+                  <span aria-hidden='true' className={styles['divider']} />
+                )}
+              </div>
             ))}
             {overflowButtons.length > 0 && (
               <DropdownMenu>
@@ -278,14 +301,22 @@ const AnnotationPopup: React.FC<AnnotationPopupProps> = ({
                   <span
                     key={`${button.tooltipText}-${index}`}
                     data-measure-tool
-                    className={clsx(
-                      'flex h-9 shrink-0 items-center justify-center gap-1.5',
-                      '[@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:min-w-11',
-                      button.label ? 'min-w-max px-3 text-[13px] font-medium leading-none' : 'w-9',
-                    )}
+                    className={styles['toolSlot']}
                   >
-                    <Icon className='shrink-0 text-lg' />
-                    {button.label && <span className='whitespace-nowrap'>{button.label}</span>}
+                    <span
+                      className={clsx(
+                        'flex h-9 shrink-0 items-center justify-center gap-1.5',
+                        '[@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:min-w-11',
+                        styles['tool'],
+                        button.label ? styles['labeledTool'] : 'w-9',
+                      )}
+                    >
+                      <Icon className='shrink-0 text-xl' />
+                      {button.label && <span className='whitespace-nowrap'>{button.label}</span>}
+                    </span>
+                    {hasDivider(button, index) && (
+                      <span aria-hidden='true' className={styles['divider']} />
+                    )}
                   </span>
                 );
               })}

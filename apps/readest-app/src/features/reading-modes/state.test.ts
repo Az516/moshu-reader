@@ -9,9 +9,47 @@ import {
   chapterStorageKey,
   pageLayoutSettings,
   readChapterEntry,
+  getFollowStyle,
+  validateModeState,
 } from './state';
 
 describe('reading mode continuity', () => {
+  it('uses soft guidance for new books and preserves classic guidance for old documents', async () => {
+    expect(getFollowStyle(emptyModeState('new-book'))).toBe('soft');
+    expect(emptyModeState('new-book').lockLine).toBe(false);
+    const legacy = { ...emptyModeState('book') };
+    delete legacy.followStyle;
+    delete legacy.lockLine;
+    const writeFile = vi.fn();
+    const service = {
+      exists: async () => true,
+      readFile: async () => JSON.stringify(legacy),
+      writeFile,
+    } as unknown as AppService;
+    const loaded = await loadModeState(service, 'book');
+    expect(getFollowStyle(loaded)).toBe('classic');
+    expect(loaded).not.toHaveProperty('followStyle');
+    expect(loaded).not.toHaveProperty('lockLine');
+    expect(writeFile).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['classic', false],
+    ['classic', true],
+    ['soft', false],
+    ['soft', true],
+  ] as const)('retains style %s and lockLine %s across reading modes', (followStyle, lockLine) => {
+    const chosen = { ...emptyModeState('book'), followStyle, lockLine };
+    validateModeState(chosen, 'book');
+    const analytical = switchMode(chosen, 'analytical');
+    const thematic = switchMode(analytical, 'thematic');
+    const quick = switchMode(thematic, 'quick');
+    for (const state of [analytical, thematic, quick]) {
+      expect(getFollowStyle(state)).toBe(followStyle);
+      expect(state.lockLine).toBe(lockLine);
+    }
+  });
+
   it('maps the visible double-page choice to two renderer columns', () => {
     expect(pageLayoutSettings('none')).toEqual({ spreadMode: 'none', maxColumnCount: 1 });
     expect(pageLayoutSettings('auto')).toEqual({ spreadMode: 'auto', maxColumnCount: 2 });
@@ -31,7 +69,12 @@ describe('reading mode continuity', () => {
     expect(analytical.intensive).toEqual(['chapter']);
     expect(switchMode(analytical, 'thematic').captures).toEqual(before.captures);
   });
-  it('serializes concurrent writes and keeps each book isolated', async () => {
+  it.each([
+    ['classic', false],
+    ['classic', true],
+    ['soft', false],
+    ['soft', true],
+  ] as const)('serializes style %s and lockLine %s and keeps each book isolated', async (followStyle, lockLine) => {
     const files = new Map<string, string>();
     const service = {
       exists: vi.fn(async (path: string) => files.has(path)),
@@ -49,12 +92,19 @@ describe('reading mode continuity', () => {
       }),
     } as unknown as AppService;
     await Promise.all([
-      mutateModeState(service, 'a', (s) => ({ ...s, captures: { first: '一句话' } })),
+      mutateModeState(service, 'a', (s) => ({
+        ...s,
+        captures: { first: '一句话' },
+        followStyle,
+        lockLine,
+      })),
       mutateModeState(service, 'a', (s) => switchMode(s, 'analytical')),
     ]);
     expect(await loadModeState(service, 'a')).toMatchObject({
       mode: 'analytical',
       captures: { first: '一句话' },
+      followStyle,
+      lockLine,
     });
     expect((await loadModeState(service, 'b')).captures).toEqual({});
   });
@@ -67,6 +117,44 @@ describe('reading mode continuity', () => {
   });
 
   it.each([
+    false,
+    true,
+  ])('migrates the legacy locked style without changing follow=%s or rewriting on read', async (follow) => {
+    const legacy = { ...emptyModeState('book'), followStyle: 'locked', follow };
+    const raw = JSON.stringify(legacy);
+    const files = new Map([['book/reading-modes.json', raw]]);
+    const writeFile = vi.fn(async (path: string, _base: string, data: string) => {
+      files.set(path, data);
+    });
+    const service = {
+      exists: async (path: string) => files.has(path),
+      readFile: async (path: string) => files.get(path),
+      createDir: async () => {},
+      writeFile,
+      replaceFile: async (from: string, to: string) => {
+        files.set(to, files.get(from)!);
+        files.delete(from);
+      },
+      deleteFile: async (path: string) => {
+        files.delete(path);
+      },
+    } as unknown as AppService;
+    expect(await loadModeState(service, 'book')).toMatchObject({
+      followStyle: 'soft',
+      lockLine: true,
+      follow,
+    });
+    expect(files.get('book/reading-modes.json')).toBe(raw);
+    expect(writeFile).not.toHaveBeenCalled();
+    await mutateModeState(service, 'book', (current) => ({ ...current, followStyle: 'classic' }));
+    expect(JSON.parse(files.get('book/reading-modes.json')!)).toMatchObject({
+      followStyle: 'classic',
+      lockLine: true,
+      follow,
+    });
+  });
+
+  it.each([
     { captures: 'broken' },
     { captures: { chapter: 4 } },
     { reconstructions: [] },
@@ -76,6 +164,12 @@ describe('reading mode continuity', () => {
     { mode: 'invalid' },
     { reminders: 'false' },
     { follow: null },
+    { followStyle: 'unknown' },
+    { followStyle: null },
+    { followStyle: true },
+    { lockLine: 'true' },
+    { lockLine: null },
+    { lockLine: 1 },
     { quietDate: 9 },
     { intensive: [7] },
   ])('rejects malformed persisted values without overwriting the file: %j', async (patch) => {

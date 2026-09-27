@@ -14,6 +14,7 @@ import {
 import { useEnv } from '@/context/EnvContext';
 import { useBookDataStore } from '@/store/bookDataStore';
 import type { ReadingSource } from '../reading-method/types';
+import { archiveGroupId, buildArchiveGroups } from '../book-notes/grouping';
 import { askReadingAI, type PublicReadingSource } from '../active-reading/ai';
 import {
   emptyReadingData,
@@ -53,6 +54,7 @@ export interface DialogueCardProps {
   onClose: () => void;
   onSaved: (record: ReadingRecord) => void;
   onRemoved?: (recordId: string) => void;
+  onOpenNotes?: (source: ReadingSource, draft?: string) => void;
   quick?: boolean;
 }
 
@@ -89,6 +91,7 @@ export default function DialogueCard({
   onClose,
   onSaved,
   onRemoved,
+  onOpenNotes,
   quick = false,
 }: DialogueCardProps) {
   const { appService } = useEnv();
@@ -100,6 +103,26 @@ export default function DialogueCard({
     [bookHash, bookData?.book?.title, bookData?.book?.author],
   );
   const [data, setData] = useState<ReadingData | null>(null);
+  const archiveGroup = useMemo(() => {
+    if (!source.cfi || (source.bookHash && source.bookHash !== bookHash)) return undefined;
+    const id = archiveGroupId(bookHash, { id: 'selected-source', source });
+    return buildArchiveGroups({
+      book: {
+        hash: bookHash,
+        title: bookData?.book?.title || '',
+        author: bookData?.book?.author || '',
+      },
+      booknotes: bookData?.config?.booknotes,
+      readingData: data || undefined,
+    }).find((group) => group.id === id);
+  }, [
+    source,
+    bookHash,
+    bookData?.book?.title,
+    bookData?.book?.author,
+    bookData?.config?.booknotes,
+    data,
+  ]);
   const [messages, setMessages] = useState<DialogueMessage[]>([]);
   const [text, setText] = useState('');
   const [publicEnabled, setPublicEnabled] = useState(true);
@@ -560,6 +583,23 @@ export default function DialogueCard({
           <X size={18} aria-hidden='true' />
         </button>
       </header>
+
+      {onOpenNotes && (
+        <div className='modian-archive-link'>
+          <button
+            type='button'
+            disabled={busy || saving || Boolean(saveError) || Boolean(historyError)}
+            onClick={() => onOpenNotes(source, text.trim() || undefined)}
+          >
+            <BookmarkPlus size={16} aria-hidden='true' />
+            {archiveGroup?.noteCount
+              ? `已有 ${archiveGroup.noteCount} 次记录 · 查看或追加`
+              : archiveGroup
+                ? '已收藏原文 · 查看或追加'
+                : '写进本书笔记'}
+          </button>
+        </div>
+      )}
 
       {showHistory && (
         <section className='modian-local-history eink-bordered' aria-label='本书对话历史'>

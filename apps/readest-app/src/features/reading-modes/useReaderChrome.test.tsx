@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { RefObject } from 'react';
 import type { FoliateView } from '@/types/view';
 import { eventDispatcher } from '@/utils/event';
+import { DropdownProvider, useDropdownContext } from '@/context/DropdownContext';
 import { useReaderChrome } from './useReaderChrome';
 
 const makeView = (contentDocument: Document) => {
@@ -36,7 +37,10 @@ describe('useReaderChrome', () => {
     root.getBoundingClientRect = () =>
       ({ top: 100, bottom: 700, left: 0, right: 900, width: 900, height: 600 }) as DOMRect;
     rootRef = { current: root };
-    contentDocument = document.implementation.createHTMLDocument('book');
+    const frame = document.createElement('iframe');
+    root.append(frame);
+    frame.getBoundingClientRect = root.getBoundingClientRect;
+    contentDocument = frame.contentDocument as Document;
   });
 
   afterEach(() => {
@@ -62,7 +66,7 @@ describe('useReaderChrome', () => {
     });
   };
 
-  test('keeps the desktop edge-hover and 1.6 second auto-hide behavior', () => {
+  test('keeps desktop chrome hidden while the mouse crosses text and both viewport edges', () => {
     setCoarsePointer(false);
     const view = makeView(contentDocument);
     const { result } = renderHook(() => useReaderChrome(rootRef, view));
@@ -70,8 +74,15 @@ describe('useReaderChrome', () => {
     act(() => vi.advanceTimersByTime(1600));
     expect(result.current.visible).toBe(false);
 
-    act(() => document.dispatchEvent(pointerEvent('pointermove', { clientY: 110 })));
-    expect(result.current.visible).toBe(true);
+    for (const clientY of [110, 350, 690]) {
+      act(() => root.dispatchEvent(pointerEvent('pointermove', { clientY })));
+      expect(result.current.visible).toBe(false);
+    }
+
+    for (const clientY of [10, 250, 590]) {
+      act(() => contentDocument.dispatchEvent(pointerEvent('pointermove', { clientY })));
+      expect(result.current.visible).toBe(false);
+    }
 
     act(() => vi.advanceTimersByTime(1600));
     expect(result.current.visible).toBe(false);
@@ -79,6 +90,39 @@ describe('useReaderChrome', () => {
     expect(result.current.visible).toBe(false);
     act(() => contentDocument.dispatchEvent(pointerEvent('pointerdown', { pointerType: 'mouse' })));
     expect(result.current.visible).toBe(false);
+  });
+
+  test('keeps an open menu visible after the hide timer expires and hides when it closes', () => {
+    setCoarsePointer(false);
+    const view = makeView(contentDocument);
+    const { result } = renderHook(
+      () => ({ chrome: useReaderChrome(rootRef, view), dropdown: useDropdownContext()! }),
+      { wrapper: DropdownProvider },
+    );
+
+    act(() => result.current.dropdown.openDropdown('follow-style'));
+    act(() => vi.advanceTimersByTime(1600));
+    expect(result.current.chrome.visible).toBe(true);
+    act(() => vi.advanceTimersByTime(10_000));
+    expect(result.current.chrome.visible).toBe(true);
+    act(() => result.current.dropdown.closeDropdown('follow-style'));
+    expect(result.current.chrome.visible).toBe(false);
+  });
+
+  test('closing a menu before the hide deadline preserves the remaining reveal time', () => {
+    setCoarsePointer(false);
+    const view = makeView(contentDocument);
+    const { result } = renderHook(
+      () => ({ chrome: useReaderChrome(rootRef, view), dropdown: useDropdownContext()! }),
+      { wrapper: DropdownProvider },
+    );
+
+    act(() => result.current.dropdown.openDropdown('follow-style'));
+    act(() => vi.advanceTimersByTime(800));
+    act(() => result.current.dropdown.closeDropdown('follow-style'));
+    expect(result.current.chrome.visible).toBe(true);
+    act(() => vi.advanceTimersByTime(800));
+    expect(result.current.chrome.visible).toBe(false);
   });
 
   test('gives touch readers time to use the toolbar and restores it from a body tap', () => {
@@ -123,7 +167,7 @@ describe('useReaderChrome', () => {
     expect(eventDispatcher.dispatchSync('iframe-single-click')).toBe(false);
   });
 
-  test('does not consume desktop iframe clicks while revealing chrome from pointer movement', () => {
+  test('does not consume desktop iframe clicks', () => {
     setCoarsePointer(false);
     const view = makeView(contentDocument);
     renderHook(() => useReaderChrome(rootRef, view));
@@ -151,5 +195,41 @@ describe('useReaderChrome', () => {
 
     act(() => result.current.reveal());
     expect(result.current.visible).toBe(true);
+  });
+
+  test('Tab and Escape also restore controls while focus is inside the EPUB', () => {
+    setCoarsePointer(false);
+    const view = makeView(contentDocument);
+    const { result } = renderHook(() => useReaderChrome(rootRef, view));
+
+    for (const key of ['Tab', 'Escape']) {
+      act(() => vi.advanceTimersByTime(1600));
+      expect(result.current.visible).toBe(false);
+      act(() => contentDocument.dispatchEvent(new KeyboardEvent('keydown', { key })));
+      expect(result.current.visible).toBe(true);
+    }
+  });
+
+  test('leaves Escape to editors without revealing reading controls', () => {
+    setCoarsePointer(false);
+    const view = makeView(contentDocument);
+    const { result } = renderHook(() => useReaderChrome(rootRef, view));
+    act(() => vi.advanceTimersByTime(1600));
+
+    for (const doc of [document, contentDocument]) {
+      for (const tag of ['input', 'textarea']) {
+        const editor = doc.createElement(tag);
+        doc.body.append(editor);
+        const event = new KeyboardEvent('keydown', {
+          key: 'Escape',
+          bubbles: true,
+          cancelable: true,
+        });
+        act(() => editor.dispatchEvent(event));
+        expect(result.current.visible).toBe(false);
+        expect(event.defaultPrevented).toBe(false);
+        editor.remove();
+      }
+    }
   });
 });

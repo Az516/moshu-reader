@@ -526,6 +526,7 @@ export const DEFAULT_ANNOTATOR_CONFIG: AnnotatorConfig = {
   enableAnnotationQuickActions: true,
   annotationQuickAction: null,
   annotationToolbarItems: DEFAULT_ANNOTATION_TOOLBAR_ITEMS,
+  annotationToolbarCustomized: false,
   copyToNotebook: false,
   noteExportConfig: DEFAULT_NOTE_EXPORT_CONFIG,
 };

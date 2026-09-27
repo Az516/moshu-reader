@@ -38,6 +38,8 @@
     "verify:nightly": "node scripts/nightly-verify-harness/serve.mjs",
     "bench": "node --experimental-strip-types --no-warnings bench/index.ts",
     "test:e2e": "wdio run wdio.conf.ts",
+    "notes:mcp": "node scripts/notes-mcp/server.mjs",
+    "test:notes-mcp": "node --test scripts/notes-mcp/server.node-test.mjs",
     "test:e2e:web": "playwright test",
     "test:e2e:web:upstream": "dotenv -v PLAYWRIGHT_UPSTREAM=1 -- playwright test",
     "test:e2e:web:headed": "playwright test --headed --workers=1 --trace on",

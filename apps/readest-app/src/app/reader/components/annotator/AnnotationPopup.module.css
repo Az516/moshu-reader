@@ -1,0 +1,71 @@
+.toolbarFrame :global(.selection-popup) {
+  border-radius: 10px;
+  background-color: var(--color-base-100);
+  box-shadow: 0 6px 20px color-mix(in srgb, var(--color-base-content) 10%, transparent);
+}
+
+.toolbarFrame :global(.popup-triangle-outer),
+.toolbarFrame :global(.popup-triangle-inner) {
+  display: none;
+}
+
+.toolSlot {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.toolSlot .tool {
+  border-radius: 7px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.labeledTool {
+  min-width: max-content;
+  padding-inline: var(--selection-tool-padding, 12px);
+}
+
+.conversationTool {
+  background-color: color-mix(in srgb, var(--color-base-content) 6%, transparent);
+}
+
+.toolSlot .tool:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-base-content) 30%, transparent);
+  outline-offset: -2px;
+}
+
+.divider {
+  width: 1px;
+  height: 24px;
+  margin-inline: 4px;
+  flex-shrink: 0;
+  background-color: color-mix(in srgb, var(--color-base-content) 12%, transparent);
+}
+
+.toolbarFrame[data-vertical] .toolSlot {
+  flex-direction: column;
+}
+
+.toolbarFrame[data-vertical] .divider {
+  width: 24px;
+  height: 1px;
+  margin-inline: 0;
+  margin-block: 4px;
+}
+
+:global([data-eink='true']) .toolbarFrame :global(.selection-popup) {
+  box-shadow: none;
+}
+
+:global([data-eink='true']) .conversationTool {
+  background-color: var(--color-base-100);
+  outline: 1px solid var(--color-base-content);
+  outline-offset: -1px;
+}
+
+:global([data-eink='true']) .divider {
+  background-color: var(--color-base-content);
+}

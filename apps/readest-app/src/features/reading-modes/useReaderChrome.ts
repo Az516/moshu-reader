@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import type { FoliateView } from '@/types/view';
 import { eventDispatcher } from '@/utils/event';
+import { useDropdownContext } from '@/context/DropdownContext';
 
 const DESKTOP_HIDE_DELAY = 1600;
 const TOUCH_HIDE_DELAY = 4000;
@@ -11,6 +12,7 @@ export function useReaderChrome(
   root: RefObject<HTMLDivElement | null>,
   view: FoliateView | null | undefined,
 ) {
+  const menuOpen = Boolean(useDropdownContext()?.openDropdownId);
   const [visible, setVisible] = useState(true);
   const visibleRef = useRef(true);
   const revealRef = useRef<() => void>(() => setVisible(true));
@@ -19,7 +21,7 @@ export function useReaderChrome(
     let revealClickTimer: ReturnType<typeof setTimeout>;
     let consumeRevealClick = false;
     const coarsePointer = window.matchMedia?.('(pointer: coarse)').matches ?? false;
-    const docs = new Map<Document, { move: EventListener; touch: EventListener }>();
+    const docs = new Map<Document, EventListener>();
     const reveal = () => {
       clearTimeout(timer);
       visibleRef.current = true;
@@ -48,37 +50,36 @@ export function useReaderChrome(
       return true;
     };
     revealRef.current = reveal;
-    const move = (y: number) => {
-      const bounds = root.current?.getBoundingClientRect();
-      if (!bounds) return;
-      if (y < bounds.top + 68 || y > bounds.bottom - 82) reveal();
-    };
-    const outer = (e: PointerEvent) => move(e.clientY);
     const outerTouch = (event: PointerEvent) => {
       if (!coarsePointer && event.pointerType !== 'touch') return;
       const host = root.current;
       if (host && event.target instanceof Node && host.contains(event.target)) reveal();
     };
     const key = (e: KeyboardEvent) => {
-      if (e.key === 'Tab' || e.key === 'Escape') reveal();
+      if (e.defaultPrevented || (e.key !== 'Tab' && e.key !== 'Escape')) return;
+      const target = e.target as Element | null;
+      if (
+        e.key === 'Escape' &&
+        target?.nodeType === Node.ELEMENT_NODE &&
+        target.closest(
+          'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"]',
+        )
+      )
+        return;
+      reveal();
     };
     const attach = () => {
       for (const { doc } of view?.renderer.getContents() ?? []) {
         if (docs.has(doc)) continue;
-        const moveListener: EventListener = (event) => {
-          const frame = doc.defaultView?.frameElement?.getBoundingClientRect();
-          if (frame) move(frame.top + (event as PointerEvent).clientY);
-        };
         const touchListener: EventListener = (event) => {
           if (coarsePointer || (event as PointerEvent).pointerType === 'touch')
             prepareTouchReveal();
         };
-        doc.addEventListener('pointermove', moveListener, { passive: true });
         doc.addEventListener('pointerdown', touchListener, { passive: true });
-        docs.set(doc, { move: moveListener, touch: touchListener });
+        doc.addEventListener('keydown', key);
+        docs.set(doc, touchListener);
       }
     };
-    document.addEventListener('pointermove', outer, { passive: true });
     document.addEventListener('pointerdown', outerTouch, { passive: true });
     document.addEventListener('keydown', key);
     eventDispatcher.onSync('iframe-single-click', consumeIframeRevealClick);
@@ -88,17 +89,17 @@ export function useReaderChrome(
     return () => {
       clearTimeout(timer);
       clearTimeout(revealClickTimer);
-      document.removeEventListener('pointermove', outer);
       document.removeEventListener('pointerdown', outerTouch);
       document.removeEventListener('keydown', key);
       eventDispatcher.offSync('iframe-single-click', consumeIframeRevealClick);
       view?.removeEventListener('load', attach);
-      for (const [doc, listeners] of docs) {
-        doc.removeEventListener('pointermove', listeners.move);
-        doc.removeEventListener('pointerdown', listeners.touch);
+      for (const [doc, touchListener] of docs) {
+        doc.removeEventListener('pointerdown', touchListener);
+        doc.removeEventListener('keydown', key);
       }
     };
   }, [view, root]);
   const reveal = useCallback(() => revealRef.current(), []);
-  return { visible, reveal };
+  // Mouse-opened menus do not reliably receive focus in WebKit.
+  return { visible: visible || menuOpen, reveal };
 }

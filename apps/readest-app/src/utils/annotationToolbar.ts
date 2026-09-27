@@ -26,23 +26,40 @@ export const ALL_ANNOTATION_TOOL_TYPES: AnnotationToolType[] = [
   'share',
 ];
 
-// Default toolbar: the eight pre-existing tools in their original order.
-// 'share' starts hidden in the Available tray per the #4014 design, and
-// 'copylink' is opt-in the same way (#5452) — a niche action most readers
-// never need, reachable by adding it in Customize Toolbar.
+// Keep immediate dialogue separate from the three ways to leave a record.
 export const DEFAULT_ANNOTATION_TOOLBAR_ITEMS: AnnotationToolType[] = [
   'ask-reading',
-  'annotate',
   'highlight',
-  'dictionary',
-  'translate',
-  'tts',
+  'annotate',
+  'save-question',
+];
+
+// Existing books can retain earlier shipped defaults. Recognize those sets
+// without overwriting smaller or otherwise customized toolbars.
+const LEGACY_TOOLBAR_DEFAULTS: AnnotationToolType[][] = [
+  ['ask-reading', 'annotate', 'highlight', 'dictionary', 'translate', 'tts'],
+  ['ask-reading', 'highlight', 'annotate', 'search', 'dictionary', 'translate', 'tts', 'proofread'],
+  ['highlight', 'annotate', 'search', 'dictionary', 'translate', 'tts', 'proofread'],
 ];
 
 // Drop unknown/duplicate entries; fall back to the default when unset (a
 // pre-existing per-book config may not carry the field yet).
-const sanitize = (items: AnnotationToolType[] | undefined): AnnotationToolType[] => {
-  const source = items ?? DEFAULT_ANNOTATION_TOOLBAR_ITEMS;
+const sanitize = (
+  items: AnnotationToolType[] | undefined,
+  customized = false,
+): AnnotationToolType[] => {
+  // These actions were shipped in configs but suppressed by the old UI.
+  const legacyItems: AnnotationToolType[] | undefined = items?.filter(
+    (type) => type !== 'save-question' && type !== 'write-understanding' && type !== 'copy',
+  );
+  const legacyDefault =
+    !customized &&
+    legacyItems &&
+    LEGACY_TOOLBAR_DEFAULTS.some(
+      (legacy) =>
+        legacy.length === legacyItems.length && legacy.every((type) => legacyItems.includes(type)),
+    );
+  const source = !items || legacyDefault ? DEFAULT_ANNOTATION_TOOLBAR_ITEMS : items;
   const seen = new Set<AnnotationToolType>();
   const out: AnnotationToolType[] = [];
   for (const type of source) {
@@ -58,28 +75,26 @@ const sanitize = (items: AnnotationToolType[] | undefined): AnnotationToolType[]
 export const getToolbarToolTypes = (
   items: AnnotationToolType[] | undefined,
   canShare: boolean,
-): AnnotationToolType[] => sanitize(items).filter((type) => canShare || type !== 'share');
+  customized = false,
+): AnnotationToolType[] =>
+  sanitize(items, customized).filter((type) => canShare || type !== 'share');
 
-// One-tap highlighting (#5983): whenever the highlight tool is on the toolbar,
-// the style/color strip shows as soon as text is selected, so picking a color
-// needs no prior tap on Highlight. A popup-window selection without a CFI
-// (synthesized footnote text) can't anchor a highlight and keeps the plain
-// bar; an already-annotated selection always gets the strip, as before.
+// A fresh selection stays compact. Marking once reveals color/style controls;
+// tapping an existing mark also exposes its editing controls.
 export const shouldShowHighlightOptions = (
-  toolTypes: AnnotationToolType[],
+  _toolTypes: AnnotationToolType[],
   selection: { annotated?: boolean; popup?: boolean; cfi?: string } | null,
 ): boolean => {
-  if (!selection) return false;
-  if (selection.annotated) return true;
-  return toolTypes.includes('highlight') && !(selection.popup && !selection.cfi);
+  return !!selection?.annotated && !(selection.popup && !selection.cfi);
 };
 
 // Hidden tools (the "Available" tray), in canonical order.
 export const getAvailableToolTypes = (
   items: AnnotationToolType[] | undefined,
   canShare: boolean,
+  customized = false,
 ): AnnotationToolType[] => {
-  const visible = new Set(sanitize(items));
+  const visible = new Set(sanitize(items, customized));
   return ALL_ANNOTATION_TOOL_TYPES.filter(
     (type) => !visible.has(type) && (canShare || type !== 'share'),
   );

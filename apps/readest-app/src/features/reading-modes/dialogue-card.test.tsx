@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { emptyReadingData, type ReadingData } from '../active-reading/data';
+import type { BookNote } from '@/types/book';
 import DialogueCard from './DialogueCard';
 import { createDialogueConversation } from './dialogue-history';
 
 const mocks = vi.hoisted(() => ({
   service: {},
+  booknotes: [] as BookNote[],
   ask: vi.fn(),
   load: vi.fn(),
   mutate: vi.fn(),
@@ -17,7 +19,11 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/context/EnvContext', () => ({ useEnv: () => ({ appService: mocks.service }) }));
 vi.mock('@/store/bookDataStore', () => ({
   useBookDataStore: (selector: (state: unknown) => unknown) =>
-    selector({ booksData: { book: { book: { title: '样书', author: '作者' } } } }),
+    selector({
+      booksData: {
+        book: { book: { title: '样书', author: '作者' }, config: { booknotes: mocks.booknotes } },
+      },
+    }),
 }));
 vi.mock('../active-reading/ai', () => ({ askReadingAI: mocks.ask }));
 vi.mock('./dialogue-history', async (original) => ({
@@ -45,6 +51,7 @@ const source = {
 afterEach(cleanup);
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.booknotes = [];
   mocks.load.mockResolvedValue(emptyReadingData('book'));
   mocks.loadDialogues.mockResolvedValue({ version: 1, bookHash: 'book', conversations: [] });
   mocks.saveDialogue.mockImplementation(async (_service, bookHash, conversation) => ({
@@ -472,5 +479,157 @@ describe('小墨浮动对话', () => {
     await act(async () => fireEvent.click(screen.getByRole('button', { name: '标记笔记' })));
     expect(onSaved.mock.calls[0]?.[0].userText).toBe('第二个问题');
     expect(onSaved.mock.calls[0]?.[0].aiText).toBeUndefined();
+  });
+});
+
+describe('本书笔记入口的原文身份', () => {
+  it('counts native notes and independent thoughts together without mixing another edition or location', async () => {
+    const reading = emptyReadingData('book');
+    reading.records = [
+      { id: 'current', source },
+      { id: 'other-edition', source: { ...source, bookVersion: 'other-edition' } },
+      { id: 'other-location', source: { ...source, cfi: 'epubcfi(/6/4)' } },
+    ].map((record) => ({
+      ...record,
+      kind: 'understanding',
+      status: 'kept',
+      userText: '我的想法',
+      originalText: '我的想法',
+      revisions: [],
+    }));
+    mocks.load.mockResolvedValue(reading);
+    mocks.booknotes = [
+      {
+        id: 'native',
+        type: 'annotation',
+        cfi: source.cfi,
+        text: source.excerpt,
+        note: '原生批注',
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: 'native-two',
+        type: 'annotation',
+        cfi: source.cfi,
+        text: source.excerpt,
+        note: '另一条原生批注',
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: 'quote-only',
+        type: 'annotation',
+        cfi: source.cfi,
+        text: source.excerpt,
+        note: '',
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: 'deleted',
+        type: 'annotation',
+        cfi: source.cfi,
+        text: source.excerpt,
+        note: '删除批注',
+        createdAt: 1,
+        updatedAt: 1,
+        deletedAt: 2,
+      },
+    ];
+    const onOpenNotes = vi.fn();
+    render(
+      <DialogueCard
+        bookKey='book-view'
+        source={source}
+        onSaved={vi.fn()}
+        onClose={vi.fn()}
+        onOpenNotes={onOpenNotes}
+      />,
+    );
+    const button = await screen.findByRole('button', { name: '已有 3 次记录 · 查看或追加' });
+    fireEvent.change(screen.getByLabelText('输入消息'), { target: { value: '这次的新想法' } });
+    fireEvent.click(button);
+    expect(onOpenNotes).toHaveBeenCalledWith(source, '这次的新想法');
+  });
+
+  it('does not advertise a record from a different version at the same CFI', async () => {
+    const reading = emptyReadingData('book');
+    reading.records = [
+      {
+        id: 'old',
+        kind: 'understanding',
+        status: 'kept',
+        userText: '旧版本理解',
+        originalText: '旧版本理解',
+        revisions: [],
+        source: { ...source, bookVersion: 'old-edition' },
+      },
+    ];
+    mocks.load.mockResolvedValue(reading);
+    render(
+      <DialogueCard
+        bookKey='book-view'
+        source={source}
+        onSaved={vi.fn()}
+        onClose={vi.fn()}
+        onOpenNotes={vi.fn()}
+      />,
+    );
+    await waitFor(() => expect(mocks.load).toHaveBeenCalled());
+    expect(screen.getByRole('button', { name: '写进本书笔记' })).not.toBeNull();
+    expect(screen.queryByRole('button', { name: /已有 .*次记录/ })).toBeNull();
+  });
+
+  it('recognizes a saved highlight without claiming that a thought was written', async () => {
+    mocks.booknotes = [
+      {
+        id: 'quote-only',
+        type: 'annotation',
+        cfi: source.cfi,
+        text: source.excerpt,
+        note: '',
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    render(
+      <DialogueCard
+        bookKey='book-view'
+        source={source}
+        onSaved={vi.fn()}
+        onClose={vi.fn()}
+        onOpenNotes={vi.fn()}
+      />,
+    );
+    expect(await screen.findByRole('button', { name: '已收藏原文 · 查看或追加' })).not.toBeNull();
+  });
+
+  it('does not match an unlocated record only because its text and chapter are equal', async () => {
+    const unlocated = { ...source, cfi: undefined };
+    const reading = emptyReadingData('book');
+    reading.records = [
+      {
+        id: 'unlocated',
+        kind: 'understanding',
+        status: 'kept',
+        userText: '不能推断位置',
+        originalText: '不能推断位置',
+        revisions: [],
+        source: unlocated,
+      },
+    ];
+    mocks.load.mockResolvedValue(reading);
+    render(
+      <DialogueCard
+        bookKey='book-view'
+        source={unlocated}
+        onSaved={vi.fn()}
+        onClose={vi.fn()}
+        onOpenNotes={vi.fn()}
+      />,
+    );
+    await waitFor(() => expect(mocks.load).toHaveBeenCalled());
+    expect(screen.getByRole('button', { name: '写进本书笔记' })).not.toBeNull();
   });
 });

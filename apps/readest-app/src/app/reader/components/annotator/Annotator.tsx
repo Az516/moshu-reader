@@ -258,29 +258,35 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
     Math.max(useResponsiveSize(48), annotPopupAvailableLength - 2 * popupPadding),
   );
   const annotPopupToolSize = useResponsiveSize(42);
-  const annotPopupLabeledToolSize = useResponsiveSize(70);
-  const annotPopupAskToolSize = useResponsiveSize(110);
-  const annotPopupInlinePadding = useResponsiveSize(14);
+  const annotPopupLabeledToolSize = useResponsiveSize(88);
+  const annotPopupAskToolSize = useResponsiveSize(130);
+  const annotPopupInlinePadding = useResponsiveSize(26);
+  const annotPopupPaletteMinWidth = useResponsiveSize(360);
   const toolbarToolTypes = getToolbarToolTypes(
     viewSettings.annotationToolbarItems,
     canShare,
-  ).filter((type) => type !== 'save-question' && type !== 'write-understanding');
+    viewSettings.annotationToolbarCustomized,
+  ).filter((type) => type !== 'write-understanding');
   const highlightOptionsAvailable = shouldShowHighlightOptions(toolbarToolTypes, selection ?? null);
-  const annotPopupWidth = highlightOptionsAvailable
-    ? annotPopupMaxWidth
-    : Math.min(
-        toolbarToolTypes.reduce(
-          (width, type) =>
-            width +
-            (type === 'ask-reading'
-              ? annotPopupAskToolSize
-              : type === 'annotate' || type === 'highlight'
-                ? annotPopupLabeledToolSize
-                : annotPopupToolSize),
-          annotPopupInlinePadding,
-        ),
-        annotPopupMaxWidth,
-      );
+  const annotPopupWidth =
+    showAnnotationNotes || noteEditorTarget
+      ? annotPopupMaxWidth
+      : Math.min(
+          Math.max(
+            highlightOptionsAvailable || highlightOptionsVisible ? annotPopupPaletteMinWidth : 0,
+            toolbarToolTypes.reduce(
+              (width, type) =>
+                width +
+                (type === 'ask-reading'
+                  ? annotPopupAskToolSize
+                  : type === 'annotate' || type === 'highlight' || type === 'save-question'
+                    ? annotPopupLabeledToolSize
+                    : annotPopupToolSize),
+              annotPopupInlinePadding,
+            ),
+          ),
+          annotPopupMaxWidth,
+        );
   const coarsePointer = window.matchMedia?.('(pointer: coarse)').matches ?? false;
   // 36px desktop controls + 6px padding per edge fit in 48px. Coarse pointers
   // get 44px controls, so the popup grows too instead of clipping their hit area.
@@ -332,8 +338,26 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
     setTranslatorPopupPosition(transPopupPos);
     setProofreadPopupPosition(proofreadPopupPos);
     setTrianglePosition(triangPos);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selection, bookKey, viewSettings.vertical]);
+  }, [
+    selection,
+    bookKey,
+    viewSettings.vertical,
+    trianglePadding,
+    popupPadding,
+    annotPopupWidth,
+    annotPopupHeight,
+    dictPopupWidth,
+    dictPopupHeight,
+    transPopupWidth,
+    transPopupHeight,
+    proofreadPopupWidth,
+    proofreadPopupHeight,
+    osPlatform,
+  ]);
+
+  useEffect(() => {
+    if (showingPopup) repositionPopups();
+  }, [showingPopup, repositionPopups]);
 
   useEffect(() => {
     const highlightStyle = settings.globalReadSettings.highlightStyle;
@@ -369,6 +393,7 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
     // can otherwise close a different selection opened in the meantime.
     setSelection(null);
     setShowAnnotPopup(false);
+    setHighlightOptionsVisible(false);
     setShowAnnotationNotes(false);
     setAnnotationNotes([]);
     setShowDictionaryPopup(false);
@@ -1087,10 +1112,7 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
   };
 
   useEffect(() => {
-    // One-tap highlighting (#5983): with the highlight tool on the toolbar the
-    // style/color strip opens with the popup, so a color pick highlights the
-    // fresh selection directly (HighlightOptions calls handleHighlight, which
-    // creates the record when none exists at the CFI yet).
+    // Fresh selections stay compact; existing marks expose their style controls.
     setHighlightOptionsVisible(highlightOptionsAvailable);
     if (selection && selection.text.trim().length > 0) {
       // Read-and-reset the Word Lens dictionary flag up front so it can never
@@ -2357,7 +2379,7 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
         };
       case 'save-question':
         return {
-          tooltipText: _(label),
+          tooltipText: '疑问 · 留下疑问，稍后再想',
           Icon,
           onClick: () => handleReadingAction('question'),
           disabled: bookData.book?.format !== 'EPUB' || popupSelectionNoCfi,
@@ -2384,7 +2406,7 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
             ? '移除标记 · 删除所选文字的视觉标记'
             : '标记 · 选择荧光、横线或波浪',
           Icon: selectionAnnotated ? RiDeleteBinLine : Icon,
-          onClick: handleHighlight,
+          onClick: () => handleHighlight(),
           disabled: popupSelectionNoCfi,
         };
       case 'annotate':
@@ -2428,6 +2450,7 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
       const type = toolbarToolTypes[index];
       return {
         ...button,
+        type,
         label:
           type === 'ask-reading'
             ? '呼叫小墨'
@@ -2437,7 +2460,9 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
                 ? selectionAnnotated
                   ? '移除'
                   : '标记'
-                : undefined,
+                : type === 'save-question'
+                  ? '疑问'
+                  : undefined,
       };
     })
     .filter((button): button is NonNullable<typeof button> => button !== null);

@@ -105,6 +105,7 @@ describe('sentence guide reader integration', () => {
         cfi: 'epubcfi(/6/2!/4/2)',
         sectionIndex: 2,
       }),
+      { x: 125, y: 150, lineTop: 142, lineBottom: 166 },
     );
   });
 
@@ -149,6 +150,62 @@ describe('sentence guide reader integration', () => {
     act(() => vi.advanceTimersByTime(5000));
     expect(onDwell).not.toHaveBeenCalled();
     expect(overlay().style.visibility).toBe('hidden');
+  });
+
+  it('keeps the first painted marker through resize observation setup, including after re-enabling', () => {
+    const resizeNotifications: (() => void)[] = [];
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: () => void) {
+          resizeNotifications.push(callback);
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    const { rerender } = render(
+      <SentenceGuide
+        bookKey='book'
+        enabled
+        remindersEnabled
+        followStyle='soft'
+        onDwell={onDwell}
+      />,
+    );
+    move();
+    act(() => resizeNotifications.at(-1)!());
+    expect(overlay().style.visibility).toBe('visible');
+    act(() => resizeNotifications.at(-1)!());
+    expect(overlay().style.visibility).toBe('hidden');
+    act(() => vi.advanceTimersByTime(5000));
+    expect(onDwell).not.toHaveBeenCalled();
+
+    rerender(
+      <SentenceGuide
+        bookKey='book'
+        enabled={false}
+        remindersEnabled
+        followStyle='soft'
+        onDwell={onDwell}
+      />,
+    );
+    rerender(
+      <SentenceGuide
+        bookKey='book'
+        enabled
+        remindersEnabled
+        followStyle='soft'
+        onDwell={onDwell}
+      />,
+    );
+    move();
+    act(() => resizeNotifications.at(-1)!());
+    expect(overlay().style.visibility).toBe('visible');
+    act(() => resizeNotifications.at(-1)!());
+    expect(overlay().style.visibility).toBe('hidden');
+    act(() => vi.advanceTimersByTime(5000));
+    expect(onDwell).not.toHaveBeenCalled();
   });
 
   it('uses the macOS-safe analytical ring while preserving interactive cursor rules', () => {
@@ -264,7 +321,102 @@ describe('sentence guide reader integration', () => {
     act(() => vi.advanceTimersByTime(140));
     expect(overlay().style.visibility).toBe('visible');
     act(() => doc.dispatchEvent(new Event('pointerout')));
+    expect(overlay().style.visibility).toBe('visible');
+    act(() => document.dispatchEvent(new MouseEvent('pointermove', { clientX: 90, clientY: 90 })));
+    expect(overlay().style.visibility).toBe('visible');
+  });
+
+  it('keeps classic contrast when passing over a book link, while stopping reminders', () => {
+    const link = doc.createElement('a');
+    link.href = '#note';
+    link.textContent = '注释';
+    paragraph.appendChild(link);
+    render(
+      <SentenceGuide
+        bookKey='book'
+        enabled
+        remindersEnabled
+        followStyle='classic'
+        onDwell={onDwell}
+      />,
+    );
+    move();
+    act(() => {
+      link.dispatchEvent(
+        new MouseEvent('pointermove', { bubbles: true, clientX: 65, clientY: 50 }),
+      );
+      vi.advanceTimersByTime(20);
+    });
+    expect(overlay().style.visibility).toBe('visible');
+    act(() => vi.advanceTimersByTime(5000));
+    expect(onDwell).not.toHaveBeenCalled();
+    act(() => link.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true })));
     expect(overlay().style.visibility).toBe('hidden');
+  });
+
+  it('moves a single soft marker continuously without dimming or rewriting the book', () => {
+    vi.spyOn(state.view!, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 80, 780, 600));
+    const { rerender } = render(
+      <SentenceGuide
+        bookKey='book'
+        enabled
+        remindersEnabled={false}
+        followStyle='soft'
+        onDwell={onDwell}
+      />,
+    );
+    const original = paragraph.innerHTML;
+    move();
+    const marker = overlay().querySelector<HTMLElement>('[data-focus-soft]')!;
+    expect(marker).not.toBeNull();
+    expect(overlay().querySelector('.moshu-focus-veil')).toBeNull();
+    expect(paragraph.innerHTML).toBe(original);
+    const before = marker.style.left;
+    act(() => {
+      paragraph.dispatchEvent(
+        new MouseEvent('pointermove', { bubbles: true, clientX: 30, clientY: 50 }),
+      );
+      vi.advanceTimersByTime(20);
+    });
+    expect(marker.style.left).not.toBe(before);
+    expect(doc.querySelector('style[data-moshu-focus]')).toBeNull();
+    expect(paragraph.innerHTML).toBe(original);
+    rerender(
+      <SentenceGuide
+        bookKey='book'
+        enabled
+        remindersEnabled={false}
+        followStyle='classic'
+        onDwell={onDwell}
+      />,
+    );
+    move();
+    expect(overlay().style.mixBlendMode).toBe('normal');
+    expect(overlay().querySelector('.moshu-focus-veil')).not.toBeNull();
+  });
+
+  it('restarts dwell after movement within the same sentence and supplies a viewport anchor', () => {
+    render(<SentenceGuide bookKey='book' enabled remindersEnabled onDwell={onDwell} />);
+    move();
+    act(() => vi.advanceTimersByTime(4000));
+    act(() => {
+      paragraph.dispatchEvent(
+        new MouseEvent('pointermove', { bubbles: true, clientX: 33, clientY: 50 }),
+      );
+      vi.advanceTimersByTime(20);
+    });
+    act(() => vi.advanceTimersByTime(1500));
+    expect(onDwell).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(3500));
+    expect(onDwell).toHaveBeenCalledWith(
+      expect.objectContaining({ excerpt: '阅读需要主动思考。' }),
+      {
+        x: 133,
+        y: 150,
+        lineTop: 142,
+        lineBottom: 166,
+      },
+    );
   });
 
   it('preserves cooldown across temporary pauses and uses the latest callback', () => {

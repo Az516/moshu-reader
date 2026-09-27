@@ -444,6 +444,8 @@ export interface AnnotatorConfig {
   enableAnnotationQuickActions: boolean;
   annotationQuickAction: AnnotationToolType | null;
   annotationToolbarItems: AnnotationToolType[];
+  /** Explicit edits must not be mistaken for a previously shipped default. */
+  annotationToolbarCustomized?: boolean;
   copyToNotebook: boolean;
   noteExportConfig: NoteExportConfig;
 }

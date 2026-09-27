@@ -9,6 +9,7 @@ interface TextEditorProps {
   onEscape?: () => void;
   placeholder?: string;
   className?: string;
+  fontSize?: 'small' | 'inherit';
   autoFocus?: boolean;
   spellCheck?: boolean;
   disabled?: boolean;
@@ -39,6 +40,7 @@ const TextEditor = forwardRef<TextEditorRef, TextEditorProps>(
       onEscape,
       placeholder,
       className,
+      fontSize = 'small',
       autoFocus = false,
       spellCheck = false,
       disabled = false,
@@ -132,7 +134,8 @@ const TextEditor = forwardRef<TextEditorRef, TextEditorProps>(
         className={clsx(
           'textarea textarea-ghost min-h-[1em] resize-none outline-hidden!',
           'inset-0 w-full rounded-none border-0 bg-transparent p-0',
-          'content font-size-sm',
+          'content',
+          fontSize === 'small' && 'font-size-sm',
           className,
         )}
         dir='auto'

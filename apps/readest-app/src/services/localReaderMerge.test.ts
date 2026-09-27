@@ -4,7 +4,7 @@ import {
   mergeReadingData,
   type ReadingRecord,
 } from '@/features/active-reading/data';
-import { emptyModeState, mergeModeState } from '@/features/reading-modes/state';
+import { emptyModeState, getFollowStyle, mergeModeState } from '@/features/reading-modes/state';
 import { createResearch, mergeResearchFiles } from '@/features/reading-modes/thematic';
 const record = (id: string, text: string): ReadingRecord => ({
   id,
@@ -33,6 +33,28 @@ describe('local-only restore merge', () => {
     expect(result.restoreConflicts).toContainEqual(
       expect.objectContaining({ path: 'captures.a', incoming: 'old' }),
     );
+  });
+  it.each([
+    ['classic', false],
+    ['classic', true],
+    ['soft', false],
+    ['soft', true],
+    [undefined, undefined],
+  ] as const)('retains current follow style %s and lockLine %s when restoring a different preference', (followStyle, lockLine) => {
+    const current = { ...emptyModeState('book'), followStyle, lockLine };
+    if (followStyle === undefined) delete current.followStyle;
+    if (lockLine === undefined) delete current.lockLine;
+    const backup = {
+      ...emptyModeState('book'),
+      followStyle: followStyle === 'soft' ? ('classic' as const) : ('soft' as const),
+      lockLine: !lockLine,
+      captures: { restored: 'Imported thought' },
+    };
+    const result = mergeModeState(current, backup);
+    expect(result.followStyle).toBe(followStyle);
+    expect(getFollowStyle(result)).toBe(followStyle ?? 'classic');
+    expect(result.lockLine).toBe(lockLine);
+    expect(result.captures).toEqual({ restored: 'Imported thought' });
   });
   it('keeps divergent thematic conversations as separate recoverable history', () => {
     const current = {

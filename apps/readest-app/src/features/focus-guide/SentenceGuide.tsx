@@ -2,18 +2,30 @@
 
 import { useEffect, useId, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import tinycolor from 'tinycolor2';
 import { useDropdownContext } from '@/context/DropdownContext';
 import { useReaderStore } from '@/store/readerStore';
 import { sourceFromSelection } from '../active-reading/session';
 import type { ReadingSource } from '../reading-method/types';
+import type { FollowStyle } from '../reading-modes/state';
 import { createDwellController } from './dwell';
 import { glyphRectOnLine, sentenceAtPoint } from './sentence';
+import LockedLineGuide from './LockedLineGuide';
+
+export interface DwellAnchor {
+  x: number;
+  y: number;
+  lineTop: number;
+  lineBottom: number;
+}
 
 export interface SentenceGuideProps {
   bookKey: string;
   enabled: boolean;
   remindersEnabled: boolean;
-  onDwell: (source: ReadingSource) => void;
+  onDwell: (source: ReadingSource, anchor: DwellAnchor) => void;
+  followStyle?: FollowStyle;
+  lockLine?: boolean;
   paused?: boolean;
   variant?: 'focus-window' | 'emphasis';
 }
@@ -47,6 +59,8 @@ export default function SentenceGuide({
   onDwell,
   paused = false,
   variant = 'emphasis',
+  followStyle = 'classic',
+  lockLine = false,
 }: SentenceGuideProps) {
   const view = useReaderStore((state) => state.viewStates[bookKey]?.view);
   const vertical = useReaderStore((state) => state.viewStates[bookKey]?.viewSettings?.vertical);
@@ -54,6 +68,8 @@ export default function SentenceGuide({
   const menuOpen = Boolean(useDropdownContext()?.openDropdownId);
   const rootRef = useRef<HTMLDivElement>(null);
   const veilRef = useRef<SVGRectElement>(null);
+  const softRef = useRef<HTMLDivElement>(null);
+  const anchorRef = useRef<DwellAnchor | null>(null);
   const maskId = useId().replace(/:/g, '');
   const onDwellRef = useRef(onDwell);
   useEffect(() => {
@@ -62,7 +78,9 @@ export default function SentenceGuide({
   const session = useMemo(
     () => ({
       bookKey,
-      dwell: createDwellController((source) => onDwellRef.current(source)),
+      dwell: createDwellController((source) => {
+        if (anchorRef.current) onDwellRef.current(source, anchorRef.current);
+      }),
     }),
     [bookKey],
   );
@@ -163,12 +181,15 @@ export default function SentenceGuide({
   useEffect(() => {
     const root = rootRef.current;
     const veil = veilRef.current;
-    if (!root || !veil || !view) return;
+    const soft = softRef.current;
+    if (!root || !view) return;
     root.style.visibility = 'hidden';
+    root.style.mixBlendMode = 'normal';
     const { dwell } = session;
     if ((!enabled && !remindersEnabled) || paused || menuOpen || view.isFixedLayout) return;
     let frameId = 0;
     let point: { doc: Document; x: number; y: number } | null = null;
+    let restingPoint: { doc: Document; x: number; y: number } | null = null;
     let lastSource: { key: string; source: ReadingSource } | null = null;
     let nextElementId = 0;
     const highlights = new Map<
@@ -184,9 +205,22 @@ export default function SentenceGuide({
     const hide = () => {
       clearHighlights();
       point = null;
+      restingPoint = null;
+      anchorRef.current = null;
       lastSource = null;
       root.style.visibility = 'hidden';
       dwell.cancel();
+    };
+    // Crossing iframe edges, page gutters and passive controls is not a request
+    // to toggle the entire page's contrast. Keep the classic focus until an
+    // explicit interaction; soft mode can retire its tiny marker independently.
+    const leaveText = () => {
+      dwell.cancel();
+      point = null;
+      lastSource = null;
+      anchorRef.current = null;
+      restingPoint = null;
+      if (followStyle === 'soft') root.style.visibility = 'hidden';
     };
     const paint = () => {
       frameId = 0;
@@ -204,6 +238,13 @@ export default function SentenceGuide({
           lastSource = null;
           return;
         }
+        const frame = iframe.getBoundingClientRect();
+        anchorRef.current = {
+          x: frame.left + x,
+          y: frame.top + y,
+          lineTop: frame.top + hit.caretRect.top,
+          lineBottom: frame.top + hit.caretRect.bottom,
+        };
         const contents = view.renderer.getContents().find((content) => content.doc === doc);
         if (!contents) return hide();
         const index = contents.index ?? view.renderer.primaryIndex;
@@ -236,10 +277,33 @@ export default function SentenceGuide({
           root.style.visibility = 'hidden';
           return;
         }
-        const frame = iframe.getBoundingClientRect();
         const bounds = view.getBoundingClientRect();
         const left = Math.max(0, bounds.left);
         const top = Math.max(0, bounds.top);
+        Object.assign(root.style, {
+          left: `${left}px`,
+          top: `${top}px`,
+          width: `${Math.max(0, Math.min(window.innerWidth, bounds.right) - left)}px`,
+          height: `${Math.max(0, Math.min(window.innerHeight, bounds.bottom) - top)}px`,
+          visibility: 'visible',
+        });
+        if (followStyle === 'soft' && soft) {
+          const fontSize = Number.parseFloat(styles?.fontSize || '20') || 20;
+          const width = Math.min(fontSize * 4.5, bounds.width);
+          const dark = tinycolor(view.renderer.pageColors?.background || '#ffffff').isDark();
+          root.style.mixBlendMode = isEink ? 'normal' : dark ? 'screen' : 'multiply';
+          Object.assign(soft.style, {
+            left: `${Math.max(0, Math.min(bounds.right - left - width, frame.left + x - left - width * 0.65))}px`,
+            top: `${frame.top + hit.caretRect.top - top - 1}px`,
+            width: `${width}px`,
+            height: `${hit.caretRect.height + 2}px`,
+            background: isEink ? 'transparent' : dark ? '#48402a' : '#fff0ba',
+            borderBottom: isEink ? '2px solid currentColor' : 'none',
+            color: styles?.color || 'currentColor',
+          });
+          return;
+        }
+        if (!veil) return;
         const glyphs = hit.glyphs.flatMap(({ text, range }) => {
           if (!text.trim()) return [];
           const rect = glyphRectOnLine(range, y);
@@ -252,14 +316,7 @@ export default function SentenceGuide({
             },
           ];
         });
-        if (!glyphs.length) return hide();
-        Object.assign(root.style, {
-          left: `${left}px`,
-          top: `${top}px`,
-          width: `${Math.max(0, Math.min(window.innerWidth, bounds.right) - left)}px`,
-          height: `${Math.max(0, Math.min(window.innerHeight, bounds.bottom) - top)}px`,
-          visibility: 'visible',
-        });
+        if (!glyphs.length) return;
         veil.setAttribute('fill', view.renderer.pageColors?.background || 'var(--color-base-100)');
         veil.style.opacity = isEink ? '0' : variant === 'focus-window' ? '0.52' : '0.25';
         const cutouts = root.querySelectorAll<SVGRectElement>('[data-focus-cutout]');
@@ -282,6 +339,7 @@ export default function SentenceGuide({
         if (runtime.Highlight && runtime.CSS?.highlights) {
           if (!highlights.has(doc)) {
             const style = doc.createElement('style');
+            style.dataset['moshuFocus'] = '';
             style.textContent = `::highlight(moshu-focus) { text-shadow: .45px 0 currentColor, -.45px 0 currentColor; }`;
             doc.head.appendChild(style);
             highlights.set(doc, { registry: runtime.CSS.highlights, style });
@@ -300,19 +358,26 @@ export default function SentenceGuide({
     const attach = (doc: Document) => {
       if (docCleanups.has(doc)) return;
       const move = (event: PointerEvent) => {
+        if (event.pointerType === 'touch' || event.buttons !== 0) return hide();
         if (
-          event.pointerType === 'touch' ||
-          event.buttons !== 0 ||
           (event.target as Element | null)?.closest?.(
             'a,button,input,textarea,select,[role="button"],[contenteditable="true"]',
           )
         )
-          return hide();
+          return leaveText();
+        if (
+          !restingPoint ||
+          restingPoint.doc !== doc ||
+          Math.hypot(event.clientX - restingPoint.x, event.clientY - restingPoint.y) > 3
+        ) {
+          dwell.cancel();
+          restingPoint = { doc, x: event.clientX, y: event.clientY };
+        }
         point = { doc, x: event.clientX, y: event.clientY };
         if (!frameId) frameId = requestAnimationFrame(paint);
       };
       const exit = (event: PointerEvent) => {
-        if (!event.relatedTarget) hide();
+        if (!event.relatedTarget) leaveText();
       };
       doc.addEventListener('pointermove', move, { passive: true });
       doc.addEventListener('pointerout', exit, { passive: true });
@@ -328,7 +393,12 @@ export default function SentenceGuide({
       for (const type of cancelEvents)
         doc.addEventListener(type, hide, { passive: true, capture: true });
       doc.fonts?.addEventListener('loadingdone', hide);
-      const observer = new ResizeObserver(hide);
+      let resizeObserved = false;
+      const observer = new ResizeObserver(() => {
+        // observe() reports the initial size after paint; it is not a layout change.
+        if (resizeObserved) hide();
+        resizeObserved = true;
+      });
       observer.observe(doc.documentElement);
       docCleanups.set(doc, () => {
         doc.removeEventListener('pointermove', move);
@@ -357,7 +427,6 @@ export default function SentenceGuide({
     view.renderer.addEventListener('relocate', hide);
     view.renderer.addEventListener('scroll', hide, { passive: true });
     const outerEvents = [
-      'pointermove',
       'pointerdown',
       'keydown',
       'focusin',
@@ -365,6 +434,7 @@ export default function SentenceGuide({
       'scroll',
       'wheel',
     ];
+    document.addEventListener('pointermove', leaveText, { passive: true, capture: true });
     for (const type of outerEvents)
       document.addEventListener(type, hide, { passive: true, capture: true });
     window.addEventListener('blur', hide);
@@ -382,6 +452,7 @@ export default function SentenceGuide({
       view.renderer.removeEventListener('relocate', hide);
       view.renderer.removeEventListener('scroll', hide);
       for (const type of outerEvents) document.removeEventListener(type, hide, true);
+      document.removeEventListener('pointermove', leaveText, true);
       window.removeEventListener('blur', hide);
       window.removeEventListener('resize', hide);
     };
@@ -396,35 +467,57 @@ export default function SentenceGuide({
     isEink,
     session,
     variant,
+    followStyle,
+    lockLine,
   ]);
 
   if (typeof document === 'undefined') return null;
+  if (lockLine && enabled && view)
+    return (
+      <LockedLineGuide
+        bookKey={bookKey}
+        view={view}
+        enabled={enabled}
+        remindersEnabled={remindersEnabled}
+        paused={paused || menuOpen}
+        onDwell={onDwell}
+        vertical={vertical}
+        isEink={isEink}
+        followStyle={followStyle}
+        variant={variant}
+      />
+    );
   return createPortal(
     <div
       ref={rootRef}
       aria-hidden='true'
       data-sentence-guide={bookKey}
       data-variant={variant}
+      data-follow-style={followStyle}
       className='pointer-events-none fixed z-20 overflow-hidden'
-      style={{ visibility: 'hidden', contain: 'strict' }}
+      style={{ visibility: 'hidden', contain: followStyle === 'classic' ? 'strict' : undefined }}
     >
-      <svg className='absolute inset-0 h-full w-full' aria-hidden='true'>
-        <defs>
-          <mask id={maskId} maskUnits='userSpaceOnUse'>
-            <rect width='100%' height='100%' fill='white' />
-            {Array.from({ length: 7 }, (_, index) => (
-              <rect key={index} data-focus-cutout='' fill='black' />
-            ))}
-          </mask>
-        </defs>
-        <rect
-          ref={veilRef}
-          className='moshu-focus-veil'
-          width='100%'
-          height='100%'
-          mask={`url(#${maskId})`}
-        />
-      </svg>
+      {followStyle === 'soft' ? (
+        <div ref={softRef} data-focus-soft='' style={{ position: 'absolute', borderRadius: 4 }} />
+      ) : (
+        <svg className='absolute inset-0 h-full w-full' aria-hidden='true'>
+          <defs>
+            <mask id={maskId} maskUnits='userSpaceOnUse'>
+              <rect width='100%' height='100%' fill='white' />
+              {Array.from({ length: 7 }, (_, index) => (
+                <rect key={index} data-focus-cutout='' fill='black' />
+              ))}
+            </mask>
+          </defs>
+          <rect
+            ref={veilRef}
+            className='moshu-focus-veil'
+            width='100%'
+            height='100%'
+            mask={`url(#${maskId})`}
+          />
+        </svg>
+      )}
     </div>,
     document.body,
   );

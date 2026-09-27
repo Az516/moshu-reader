@@ -1,5 +1,8 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AppService } from '@/types/system';
+import { emptyReadingData, type ReadingData } from '../active-reading/data';
+import type { SentenceGuideProps } from '../focus-guide/SentenceGuide';
 
 const h = vi.hoisted(() => {
   const source = {
@@ -24,7 +27,23 @@ const h = vi.hoisted(() => {
     sourceStore.origin = origin;
   });
   return {
-    request: null as null | { bookKey: string; handled: boolean; source: typeof source },
+    request: null as null | {
+      bookKey: string;
+      handled: boolean;
+      source: typeof source;
+      action?: 'ask' | 'question';
+    },
+    appService: null as AppService | null,
+    onDwell: null as SentenceGuideProps['onDwell'] | null,
+    readingData: null as ReadingData | null,
+    mutateReadingData:
+      vi.fn<
+        (
+          service: AppService,
+          initial: ReadingData,
+          mutate: (data: ReadingData) => ReadingData,
+        ) => Promise<ReadingData>
+      >(),
     clearHighlight: vi.fn(),
     goTo: vi.fn(async () => undefined),
     highlight: vi.fn(),
@@ -45,8 +64,19 @@ vi.mock('./source-return', () => {
 });
 
 vi.mock('@/context/EnvContext', () => ({
-  useEnv: () => ({ appService: null, envConfig: {} }),
+  useEnv: () => ({ appService: h.appService, envConfig: {} }),
 }));
+
+vi.mock('../active-reading/data', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../active-reading/data')>()),
+  loadReadingData: async (_service: AppService, initial: ReadingData) => h.readingData || initial,
+  mutateReadingData: h.mutateReadingData,
+}));
+
+vi.mock('./state', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./state')>();
+  return { ...actual, loadModeState: async () => actual.emptyModeState('book') };
+});
 
 vi.mock('@/store/bookDataStore', () => {
   const state = {
@@ -133,7 +163,15 @@ vi.mock('./useViewportWidth', () => ({ useViewportWidth: () => 1200 }));
 vi.mock('./useChapterCapture', () => ({
   useChapterCapture: () => ({ capture: '', clearDraft: vi.fn(), setCapture: vi.fn() }),
 }));
-vi.mock('./SentenceGuide', () => ({ default: () => null }));
+vi.mock('../focus-guide/SentenceGuide', () => ({
+  default: ({ onDwell }: SentenceGuideProps) => {
+    h.onDwell = onDwell;
+    return null;
+  },
+}));
+vi.mock('./DwellNudge', () => ({
+  default: ({ onOpen }: { onOpen: () => void }) => <button onClick={onOpen}>打开停留提醒</button>,
+}));
 vi.mock('./QuestionFollowup', () => ({
   default: () => null,
   QuestionAnswerLink: () => null,
@@ -143,6 +181,7 @@ import ModeReader from './ModeReader';
 
 describe('ModeReader thematic source locator', () => {
   beforeEach(() => {
+    localStorage.removeItem('moshu-question-marker-style');
     h.goTo.mockClear();
     h.highlight.mockReset();
     h.clearHighlight.mockClear();
@@ -150,9 +189,230 @@ describe('ModeReader thematic source locator', () => {
     h.sourceStore.target = h.source;
     h.sourceStore.setTarget.mockClear();
     h.request = null;
+    h.appService = null;
+    h.onDwell = null;
+    h.readingData = null;
+    h.mutateReadingData.mockReset();
+    h.mutateReadingData.mockImplementation(async (_service, initial, mutate) => {
+      h.readingData = mutate(h.readingData || initial);
+      return h.readingData;
+    });
   });
 
   afterEach(() => cleanup());
+
+  it('saves a selection question locally without opening an AI conversation', async () => {
+    h.appService = {} as AppService;
+    h.sourceStore.target = null;
+    h.request = { bookKey: 'book-view', handled: false, source: h.source, action: 'question' };
+
+    render(
+      <ModeReader bookKey='book-view' onLibrary={vi.fn()}>
+        正文
+      </ModeReader>,
+    );
+
+    await waitFor(() => expect(h.readingData?.records).toHaveLength(1));
+    expect(h.readingData?.records[0]).toMatchObject({
+      kind: 'question',
+      status: 'open',
+      source: h.source,
+      markerStyle: 'underline',
+    });
+    expect(screen.queryByText('对话正在等待本地保存')).toBeNull();
+    expect((await screen.findByRole('status')).textContent).toContain('疑问已留在原文页边');
+  });
+
+  it.each([
+    'squiggly',
+    'highlight',
+  ] as const)('uses the remembered %s style for a new toolbar question', async (markerStyle) => {
+    localStorage.setItem('moshu-question-marker-style', markerStyle);
+    h.appService = {} as AppService;
+    h.sourceStore.target = null;
+    h.request = { bookKey: 'book-view', handled: false, source: h.source, action: 'question' };
+
+    render(
+      <ModeReader bookKey='book-view' onLibrary={vi.fn()}>
+        正文
+      </ModeReader>,
+    );
+
+    await waitFor(() => expect(h.readingData?.records).toHaveLength(1));
+    expect(h.readingData?.records[0]?.markerStyle).toBe(markerStyle);
+  });
+
+  it('changes the current question style and remembers it for the next question after reopening', async () => {
+    h.appService = {} as AppService;
+    h.sourceStore.target = null;
+    const existing = {
+      id: 'question-to-style',
+      kind: 'question' as const,
+      status: 'open' as const,
+      source: h.source,
+      userText: '我想保留的疑问',
+      originalText: '我想保留的疑问',
+      revisions: [],
+    };
+    h.readingData = { ...emptyReadingData('book'), records: [existing] };
+    const reader = render(
+      <ModeReader bookKey='book-view' onLibrary={vi.fn()}>
+        正文
+      </ModeReader>,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: '笔记与疑问 · 1', hidden: true }));
+    fireEvent.click(screen.getByRole('button', { name: '查看记录' }));
+    expect(screen.getByRole('radio', { name: '横线' }).getAttribute('aria-checked')).toBe('true');
+
+    fireEvent.click(screen.getByRole('radio', { name: '波浪线' }));
+
+    await waitFor(() => expect(h.readingData?.records[0]?.markerStyle).toBe('squiggly'));
+    expect(h.readingData?.records[0]).toMatchObject(existing);
+    expect(localStorage.getItem('moshu-question-marker-style')).toBe('squiggly');
+    expect(screen.getByRole('radio', { name: '波浪线' }).getAttribute('aria-checked')).toBe('true');
+    reader.unmount();
+    h.request = {
+      bookKey: 'book-view',
+      handled: false,
+      action: 'question',
+      source: { ...h.source, cfi: 'epubcfi(/6/4!/4/2:0)' },
+    };
+    render(
+      <ModeReader bookKey='book-view' onLibrary={vi.fn()}>
+        正文
+      </ModeReader>,
+    );
+    await waitFor(() => expect(h.readingData?.records).toHaveLength(2));
+    expect(h.readingData?.records[1]?.markerStyle).toBe('squiggly');
+  });
+
+  it('keeps the existing question and default unchanged when changing its style fails', async () => {
+    localStorage.setItem('moshu-question-marker-style', 'highlight');
+    h.appService = {} as AppService;
+    h.sourceStore.target = null;
+    h.readingData = {
+      ...emptyReadingData('book'),
+      records: [
+        {
+          id: 'existing-question',
+          kind: 'question',
+          status: 'open',
+          source: h.source,
+          userText: '原来的疑问',
+          originalText: '原来的疑问',
+          revisions: [],
+          markerStyle: 'underline',
+        },
+      ],
+    };
+    render(
+      <ModeReader bookKey='book-view' onLibrary={vi.fn()}>
+        正文
+      </ModeReader>,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: '笔记与疑问 · 1', hidden: true }));
+    fireEvent.click(screen.getByRole('button', { name: '查看记录' }));
+    expect(screen.getByRole('radio', { name: '横线' }).getAttribute('aria-checked')).toBe('true');
+    h.mutateReadingData.mockRejectedValueOnce(new Error('本地空间不足'));
+
+    fireEvent.click(screen.getByRole('radio', { name: '波浪线' }));
+
+    expect((await screen.findByRole('status')).textContent).toContain('本地空间不足');
+    expect(h.readingData.records[0]?.markerStyle).toBe('underline');
+    expect(localStorage.getItem('moshu-question-marker-style')).toBe('highlight');
+  });
+
+  it.each([
+    [null, '横线'],
+    ['highlight', '高亮'],
+  ] as const)('starts the dwell picker from preference %s and remembers a new choice', async (preference, label) => {
+    if (preference) localStorage.setItem('moshu-question-marker-style', preference);
+    h.appService = {} as AppService;
+    h.sourceStore.target = null;
+    render(
+      <ModeReader bookKey='book-view' onLibrary={vi.fn()}>
+        正文
+      </ModeReader>,
+    );
+    act(() => h.onDwell?.(h.source, { x: 100, y: 100, lineTop: 90, lineBottom: 110 }));
+    fireEvent.click(screen.getByRole('button', { name: '打开停留提醒' }));
+    expect(screen.getByRole('radio', { name: label }).getAttribute('aria-checked')).toBe('true');
+
+    fireEvent.click(screen.getByRole('radio', { name: '波浪线' }));
+    expect(localStorage.getItem('moshu-question-marker-style')).toBe('squiggly');
+    fireEvent.click(screen.getByRole('button', { name: '留下疑问' }));
+
+    await waitFor(() => expect(h.readingData?.records).toHaveLength(1));
+    expect(h.readingData?.records[0]?.markerStyle).toBe('squiggly');
+  });
+
+  it.each([
+    'open',
+    'resolved',
+  ] as const)('keeps an existing %s question intact when the same selection is marked again', async (status) => {
+    h.appService = {} as AppService;
+    h.sourceStore.target = null;
+    const existing = {
+      id: 'existing-question',
+      kind: 'question' as const,
+      status,
+      source: h.source,
+      userText: '我已经写下的具体疑问',
+      originalText: '原来的疑问',
+      revisions: [],
+    };
+    h.readingData = { ...emptyReadingData('book'), records: [existing] };
+    h.request = { bookKey: 'book-view', handled: false, source: h.source, action: 'question' };
+
+    const reader = render(
+      <ModeReader bookKey='book-view' onLibrary={vi.fn()}>
+        正文
+      </ModeReader>,
+    );
+    await waitFor(() => expect(h.mutateReadingData).toHaveBeenCalledTimes(1));
+    h.request = { ...h.request, handled: false };
+    reader.rerender(
+      <ModeReader bookKey='book-view' onLibrary={vi.fn()}>
+        正文
+      </ModeReader>,
+    );
+    await waitFor(() => expect(h.mutateReadingData).toHaveBeenCalledTimes(2));
+
+    expect(h.readingData?.records).toEqual([existing]);
+    expect(screen.queryByText('对话正在等待本地保存')).toBeNull();
+  });
+
+  it('keeps ask requests as conversations without saving a question', async () => {
+    h.appService = {} as AppService;
+    h.sourceStore.target = null;
+    h.request = { bookKey: 'book-view', handled: false, source: h.source, action: 'ask' };
+
+    render(
+      <ModeReader bookKey='book-view' onLibrary={vi.fn()}>
+        正文
+      </ModeReader>,
+    );
+
+    await waitFor(() => expect(screen.getByText('对话正在等待本地保存')).not.toBeNull());
+    expect(h.mutateReadingData).not.toHaveBeenCalled();
+  });
+
+  it('reports a failed local save without claiming the question was saved', async () => {
+    h.appService = {} as AppService;
+    h.sourceStore.target = null;
+    h.mutateReadingData.mockRejectedValueOnce(new Error('本地空间不足，请重试。'));
+    h.request = { bookKey: 'book-view', handled: false, source: h.source, action: 'question' };
+
+    render(
+      <ModeReader bookKey='book-view' onLibrary={vi.fn()}>
+        正文
+      </ModeReader>,
+    );
+
+    expect((await screen.findByRole('status')).textContent).toContain('本地空间不足，请重试。');
+    expect(h.readingData).toBeNull();
+    expect(screen.queryByText('对话正在等待本地保存')).toBeNull();
+  });
 
   it('lets the dialogue finish or retry its local save before Escape can close it', async () => {
     h.request = { bookKey: 'book-view', handled: false, source: h.source };

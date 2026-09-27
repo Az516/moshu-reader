@@ -11,6 +11,7 @@ import {
   TooltipTrigger,
 } from '@/components/primitives/tooltip';
 import { annotationToolButtons } from './AnnotationTools';
+import styles from './AnnotationPopup.module.css';
 
 interface AnnotationToolButtonProps {
   showTooltip: boolean;
@@ -19,6 +20,7 @@ interface AnnotationToolButtonProps {
   Icon: React.ElementType;
   onClick: () => void;
   label?: string;
+  emphasized?: boolean;
 }
 
 const AnnotationToolButton: React.FC<AnnotationToolButtonProps> = ({
@@ -28,6 +30,7 @@ const AnnotationToolButton: React.FC<AnnotationToolButtonProps> = ({
   Icon,
   onClick,
   label,
+  emphasized,
 }) => {
   const _ = useTranslation();
   const tool = annotationToolButtons.find(
@@ -68,14 +71,16 @@ const AnnotationToolButton: React.FC<AnnotationToolButtonProps> = ({
               className={clsx(
                 'flex h-9 min-h-9 shrink-0 items-center justify-center gap-1.5 p-0',
                 '[@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11',
-                label ? 'min-w-max px-3 text-[13px] font-medium leading-none' : 'w-9',
+                styles['tool'],
+                label ? styles['labeledTool'] : 'w-9',
+                emphasized && styles['conversationTool'],
                 disabled
                   ? 'cursor-not-allowed opacity-50'
                   : 'not-eink:hover:bg-base-200 eink:hover:border rounded-md',
               )}
               disabled={disabled}
             >
-              <Icon className='shrink-0 text-lg' />
+              <Icon className='shrink-0 text-xl' />
               {label && (
                 <span data-tool-label className='whitespace-nowrap leading-none'>
                   {label}

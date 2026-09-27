@@ -8,7 +8,8 @@ import { LibraryPage } from '../pages/LibraryPage';
 test.use({ viewport: { width: 1440, height: 1000 }, locale: 'en-US' });
 
 async function revealTools(page: Page) {
-  await page.mouse.move(720, 6);
+  if ((await page.locator('.moshu-root').getAttribute('data-chrome')) === 'hidden')
+    await page.getByLabel('显示阅读工具栏', { exact: true }).click();
   await expect(page.locator('.moshu-topbar')).toHaveCSS('opacity', '1');
 }
 

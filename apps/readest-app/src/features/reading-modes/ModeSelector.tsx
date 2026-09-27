@@ -32,13 +32,19 @@ export default function ModeSelector({
   book,
   onSelect,
   onCancel,
+  onOpenNotes,
 }: {
   book: Book;
   onSelect: (mode: ReadingMode) => void;
   onCancel?: () => void;
+  onOpenNotes?: () => void;
 }) {
   return (
-    <section className='moshu-selector' aria-label='选择阅读方式'>
+    <section
+      className='moshu-selector'
+      aria-label='选择阅读方式'
+      data-has-notes={Boolean(onOpenNotes)}
+    >
       <div className='moshu-selector-content'>
         <div className='moshu-book-intro'>
           {book.coverImageUrl ? (
@@ -72,6 +78,20 @@ export default function ModeSelector({
             </button>
           ))}
         </div>
+        {onOpenNotes && (
+          <button
+            type='button'
+            className='moshu-notes-entry eink-bordered'
+            aria-label='本书笔记'
+            onClick={onOpenNotes}
+          >
+            <ModianMascot mood='reading' size={48} motion='none' />
+            <span>
+              本书笔记<small>笔记、疑问与读后的感悟，都在这里。</small>
+            </span>
+            <PiArrowRight aria-hidden='true' />
+          </button>
+        )}
         {onCancel && (
           <button className='moshu-selector-back' type='button' onClick={onCancel}>
             <PiArrowLeft aria-hidden='true' /> 返回阅读
