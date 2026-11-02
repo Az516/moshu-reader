@@ -1,70 +1,57 @@
-# 墨书 / Active Reader
+# 墨书
 
-本地优先的 AI 阅读器，基于 [Readest](https://github.com/readest/readest) 开发。当前桌面版本 **0.1.10**。
+本地优先的 AI 阅读器。读原文、做笔记，也可以围绕一本书或多本书和 AI 讨论。
 
-围绕阅读组织三个工作区：快速浏览全书、细读原文与记录思考、跨书主题讨论。书籍、笔记、阅读进度和历史对话保存在本机；调用 AI 时按需发送问题及有限的相关上下文。
+## 下载墨书
 
-## 已实现
+**当前版本：0.1.45** · 下载后直接安装，无需配置开发环境。
 
-- EPUB 阅读、目录、单页／双页、字体调整、朗读与十种阅读背景。
-- 选文提问、原文引用回跳、本书笔记与疑问、普通对话历史。
-- 主题阅读：左侧历史与搜索，右侧连续对话，支持选书、来源核对、停止、重试和历史恢复。
-- 炭灰柠黄亮色、石墨蓝暗色与跟随系统；窄窗口使用历史抽屉。
-- 本地安全写入、有效副本恢复、书库备份与合并恢复。
+| 你的电脑 | 点击下载 |
+| --- | --- |
+| **Mac · Apple 芯片**（M1 / M2 / M3 / M4 等），macOS 12 或更新版本 | [**⬇ 下载 Mac 安装包（DMG）**](https://github.com/Az516/moshu-reader/releases/download/v0.1.45/Moshu_0.1.45_macOS_arm64.dmg) |
+| **Windows · Intel / AMD 64 位**，Windows 10 / 11 | [**⬇ 下载 Windows 安装包（EXE）**](https://github.com/Az516/moshu-reader/releases/download/v0.1.45/Moshu_0.1.45_Windows_x64_setup.exe) |
 
-原有官方账号、云同步、订阅、自动更新与遥测在本地版本中关闭。公开资料检索、模型回答和读者主动使用的在线工具仍可能访问网络。
+[安装与首次使用](docs/moshu/install.md) · [版本说明与全部下载](https://github.com/Az516/moshu-reader/releases/tag/v0.1.45)
 
-## 界面
+## 可以怎么用
 
-以下实际界面使用测试书籍和本机模拟回答，不包含用户的私人对话或笔记。
+- **快速阅读**：先浏览全书，找到值得细读的部分。
+- **分析阅读**：阅读原文，选文提问，记录自己的理解和疑问。
+- **主题阅读**：围绕同一个问题，结合多本书讨论并核对引用来源。
+- **本书笔记**：整理笔记、疑问和方法论，回看原文与阅读成果。
 
-![主题阅读亮色](docs/moshu/images/light.png)
+支持 EPUB、目录、阅读进度、字体与背景调整、朗读和书库备份。基础阅读和笔记可以离线使用；使用 AI 时，需要在应用中配置自己的模型连接。
 
-![主题阅读暗色](docs/moshu/images/dark.png)
+书籍、笔记、阅读进度和对话保存在自己的电脑上。使用 AI 时，会按当前功能向你配置的服务发送问题和必要的相关内容。
 
-## 开发
+## 界面预览
 
-需要 Node.js、pnpm 11.1.1；桌面构建还需要 Rust 和对应平台工具链。macOS 需要 Xcode Command Line Tools。
+以下界面来自隔离演示书库，AI 内容为示例回答。
 
-```bash
-git clone --recurse-submodules https://github.com/Az516/moshu-reader.git
-cd moshu-reader
-pnpm install --frozen-lockfile
-cd apps/readest-app
-pnpm setup-vendors
-pnpm dev-web
-```
+![墨书书库与小墨选书](docs/moshu/images/selection-demo.jpg)
 
-默认预览地址为 `http://localhost:3000`。模型连接在“小墨设置”中配置，使用 OpenAI-compatible 接口。桌面 Key 使用系统安全存储，网页 Key 仅保留在当前会话。仓库中的 `.env` 是上游的公开构建配置；个人配置使用被忽略的 `.env.local`，不要提交密钥。
+<details>
+<summary>查看原文讨论细节</summary>
 
-macOS 本地版构建：
+![墨书围绕原文展开讨论](docs/moshu/images/reading-demo.jpg)
 
-```bash
-pnpm tauri build --config tauri.active-reader.conf.json --bundles app,dmg
-```
+</details>
 
-使用上述配置以保留应用标识 `local.activereader.desktop`。桌面书库与网页预览书库相互独立；替换应用包不会删除本地数据目录。
+## 源码与许可
 
-## 验证
+墨书基于 [Readest](https://github.com/readest/readest) 开发，保留上游署名并遵循 [AGPL-3.0](LICENSE)。第三方组件继续使用各自的许可证。
 
-在 `apps/readest-app` 中运行：
+[下载 0.1.45 对应的完整源码与构建说明](https://github.com/Az516/moshu-reader/releases/download/v0.1.45/Moshu_0.1.45_source.tar.gz)。安装和使用软件只需下载上面的 DMG 或 EXE。
 
-```bash
-pnpm lint
-pnpm test --run
-pnpm test:e2e:web
-```
+<details>
+<summary>开发与项目资料</summary>
 
-AI 交互测试默认使用本机模拟响应。真实模型测试必须显式开启，详见 [使用与开发说明](README-Active-Reader.md) 和 [测试说明](apps/readest-app/docs/testing.md)。
+发布安装包对应的源码以每个 Release 提供的完整源码归档为准。仓库默认分支目前保留较早的开发源码；GitHub 自动生成的 “Source code (zip / tar.gz)” 不代表本次安装包的完整构建输入，请使用上面的 `Moshu_0.1.45_source.tar.gz`。
 
-## 项目资料
-
-- [完整使用说明](README-Active-Reader.md)
-- [设计方案、迭代报告与界面参考](docs/moshu/README.md)
+- [使用与开发说明](README-Active-Reader.md)
+- [设计方案与迭代资料](docs/moshu/README.md)
 - [上游 Readest 说明](README-Upstream.md)
 
-仓库保存源码、测试、应用资源及整理后的设计资料，不包含本机书库、用户对话／笔记、私密配置、安装包、缓存和原始验证日志。
+源码归档中的 `BUILD.md` 提供对应版本的构建步骤。开发需要 Node.js、pnpm、Rust 及目标平台工具链；正常安装使用不需要这些工具。
 
-## 来源与许可
-
-项目以 Readest 上游提交 `3e4f8210` 为开发基线，本仓库从墨书 0.1.10 的完整源码快照开始记录，保留上游署名及 [AGPL-3.0 许可](LICENSE)。更早的提交历史见 [Readest 上游仓库](https://github.com/readest/readest)。第三方组件与子模块继续使用各自许可证。
+</details>
